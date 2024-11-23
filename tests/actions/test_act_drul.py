@@ -6,9 +6,6 @@ import pytest
 import jax
 from src.actions.act_drul import act_drul
 
-# Set the CPU as the default device
-jax.config.update("jax_default_device", jax.devices("cpu")[0])
-
 
 @pytest.mark.parametrize("batch_size", [1, 10, 100])
 def test_call(batch_size):
