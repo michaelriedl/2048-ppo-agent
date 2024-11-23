@@ -1,5 +1,5 @@
 import pytest
 
 
-def basic_test():
+def test():
     assert False
