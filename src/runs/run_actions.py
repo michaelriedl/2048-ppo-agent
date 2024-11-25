@@ -6,7 +6,7 @@ from ..running_stats_vec import RunningStatsVec
 
 
 def run_actions(
-    init_seed: int, batch_size: int, num_sims: int, act_fn: Callable
+    init_seed: int, batch_size: int, num_envs: int, act_fn: Callable
 ) -> RunningStatsVec:
     """
     Run actions in the 2048 environment.
@@ -17,9 +17,9 @@ def run_actions(
         Initial random seed.
     batch_size : int
         Batch size.
-    num_sims : int
-        Number of simulations. The number of simulations must be divisible by the batch size.
-        If not, the number of simulations will be adjusted to be divisible by the batch size.
+    num_envs : int
+        Number of environments. The number of environments must be divisible by the batch size.
+        If not, the number of environments will be adjusted to be divisible by the batch size.
     act_fn : Callable
         Function to choose actions.
 
@@ -29,11 +29,11 @@ def run_actions(
         Running statistics for the maximum tile.
 
     """
-    # Warn if the number of simulations is not divisible by the batch size
-    if num_sims % batch_size != 0:
+    # Warn if the number of environments is not divisible by the batch size
+    if num_envs % batch_size != 0:
         Warning(
-            f"The number of simulations ({num_sims}) is not divisible by the batch size ({batch_size})."
-            "The number of simulations will be adjusted to be divisible by the batch size."
+            f"The number of environments ({num_envs}) is not divisible by the batch size ({batch_size})."
+            "The number of environments will be adjusted to be divisible by the batch size."
         )
 
     # Set the environment id
@@ -50,9 +50,9 @@ def run_actions(
     step_fn = jax.jit(jax.vmap(env.step))
     # act_fn = jax.jit(jax.vmap(act_fn))
 
-    # Run the simulations
+    # Run the environments
     running_stats_max_tile = RunningStatsVec()
-    for _ in range(num_sims // batch_size):
+    for _ in range(num_envs // batch_size):
 
         # Initialize the states
         key, subkey = jax.random.split(key)
