@@ -22,6 +22,10 @@ def act_randomly(rng_key: jax.Array, obs: jax.Array, mask: jax.Array):
         Randomly chosen action.
 
     """
+    # Check shapes
+    assert obs.shape == (4, 4, 31)
+    assert mask.shape == (4,)
+    # Generate random action
     probs = mask / mask.sum()
     logits = jnp.maximum(jnp.log(probs), jnp.finfo(probs.dtype).min)
 

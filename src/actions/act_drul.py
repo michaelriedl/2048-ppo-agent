@@ -22,12 +22,13 @@ def act_drul(rng_key: jax.Array, obs: jax.Array, mask: jax.Array):
         Action.
 
     """
+    # Check shapes
+    assert obs.shape == (4, 4, 31)
+    assert mask.shape == (4,)
     # Prioritize actions in the order of down, right, up, left
     action_order = jnp.array([3, 2, 1, 0], dtype=jnp.int32)
-
     # Reorder the mask
     mask = mask[action_order]
-
     # Choose the first legal action
     action = action_order[mask.argmax()]
 
