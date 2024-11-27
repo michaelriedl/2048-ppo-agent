@@ -48,7 +48,7 @@ def run_actions(
     # Create the parallel functions
     init_fn = jax.jit(jax.vmap(env.init))
     step_fn = jax.jit(jax.vmap(env.step))
-    # act_fn = jax.jit(jax.vmap(act_fn))
+    act_fn = jax.jit(jax.vmap(act_fn))
 
     # Run the environments
     running_stats_max_tile = RunningStatsVec()
