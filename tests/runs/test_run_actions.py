@@ -8,9 +8,7 @@ from src.runs.run_actions import run_actions
 
 
 def act_fn(key, obs, mask):
-    if key.shape[0] > 1:
-        key = key[0]
-    return jax.random.randint(key, (obs.shape[0],), 0, 4)
+    return jax.random.randint(key, (), 0, 4)
 
 
 @pytest.mark.parametrize("batch_size", [2, 5])
