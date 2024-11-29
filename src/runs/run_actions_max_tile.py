@@ -2,7 +2,7 @@ import jax
 import pgx
 import numpy as np
 from typing import Callable
-from .run_actions_batch import run_actions_batch
+from .batch_runner import BatchRunner
 from ..running_stats_vec import RunningStatsVec
 
 
@@ -37,12 +37,15 @@ def run_actions_max_tile(
             "The number of environments will be adjusted to be divisible by the batch size."
         )
 
+    # Create the batch runner
+    runner = BatchRunner(init_seed=init_seed, act_fn=act_fn)
+
     # Run the environments
     running_stats_max_tile = RunningStatsVec()
     for _ in range(num_envs // batch_size):
 
         # Run the batch of environments
-        states = run_actions_batch(init_seed, batch_size, act_fn)
+        states = runner.run_actions_batch(batch_size)
 
         # Convert the boards to numpy
         boards = [s._board for s in states]
