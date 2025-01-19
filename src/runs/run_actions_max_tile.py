@@ -1,9 +1,9 @@
-import jax
-import pgx
-import numpy as np
 from typing import Callable
-from .batch_runner import BatchRunner
+
+import numpy as np
+
 from ..running_stats_vec import RunningStatsVec
+from .batch_runner import BatchRunner
 
 
 def run_actions_max_tile(

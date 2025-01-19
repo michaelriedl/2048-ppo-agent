@@ -2,9 +2,10 @@ import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
-import pytest
 import jax
+import pytest
 from pgx import State
+
 from src.runs.run_actions_batch import run_actions_batch
 
 
