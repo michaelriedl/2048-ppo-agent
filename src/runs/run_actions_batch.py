@@ -1,6 +1,7 @@
+from typing import Callable
+
 import jax
 import pgx
-from typing import Callable
 from pgx import State
 
 ENV_ID = "2048"

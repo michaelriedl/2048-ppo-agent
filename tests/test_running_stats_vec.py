@@ -2,9 +2,10 @@ import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
-import pytest
-from src.running_stats_vec import RunningStatsVec
 import numpy as np
+import pytest
+
+from src.running_stats_vec import RunningStatsVec
 
 
 def test_init():
