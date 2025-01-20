@@ -1,6 +1,7 @@
 # 2048-ppo-agent
 ![Testing](https://github.com/michaelriedl/2048-ppo-agent/actions/workflows/pytest.yml/badge.svg)
 ![Formatting](https://github.com/michaelriedl/2048-ppo-agent/actions/workflows/black.yml/badge.svg)
+
 A proximal policy optimization (PPO) reinforcement learning (RL) agent for the game 2048.
 
 ## Introduction
