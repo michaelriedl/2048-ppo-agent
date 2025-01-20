@@ -1,4 +1,4 @@
-name: pre-merge testing
+name: pytest testing
 
 on:
   pull_request:
