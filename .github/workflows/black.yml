@@ -1,4 +1,4 @@
-name: black linting
+name: black formatting
 
 on: [push, pull_request]
 
