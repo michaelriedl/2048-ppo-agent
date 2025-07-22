@@ -1,0 +1,21 @@
+[project]
+name = "2048-ppo-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "black",
+    "jax[cuda12]",
+    "jupyterlab",
+    "matplotlib",
+    "numpy",
+    "pgx",
+    "pytest",
+    "torch>2.1",
+    "torchaudio",
+    "torchvision"
+]
+
+[tool.uv.pip]
+extra-index-url = ["https://download.pytorch.org/whl/cu126"]
