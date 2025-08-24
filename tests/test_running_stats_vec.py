@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 import numpy as np
 import pytest
 
-from src.running_stats_vec import RunningStatsVec
+from src.stats.running_stats_vec import RunningStatsVec
 
 
 def test_init():

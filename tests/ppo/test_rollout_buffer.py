@@ -3,7 +3,6 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
 import numpy as np
-import pytest
 
 from src.ppo.rollout_buffer import RolloutBuffer
 
