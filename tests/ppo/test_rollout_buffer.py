@@ -2,30 +2,401 @@ import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
+import numpy as np
 import pytest
 
 from src.ppo.rollout_buffer import RolloutBuffer
 
 
-@pytest.mark.parametrize("batch_size", [1, 10, 100])
-@pytest.mark.parametrize("obs_dim", [1, 10, 100])
-@pytest.mark.parametrize("act_dim", [1, 10, 100])
-@pytest.mark.parametrize("max_steps", [1, 10, 100])
-def test_rollout_buffer(batch_size, obs_dim, act_dim, max_steps):
-    buffer = RolloutBuffer(batch_size, obs_dim, act_dim, max_steps)
-    assert buffer.obs_buffer.shape == (batch_size, max_steps, obs_dim)
-    assert buffer.act_buffer.shape == (batch_size, max_steps, act_dim)
-    assert buffer.adv_buffer.shape == (batch_size, max_steps)
-    assert buffer.rew_buffer.shape == (batch_size, max_steps)
-    assert buffer.ret_buffer.shape == (batch_size, max_steps)
-    assert buffer.val_buffer.shape == (batch_size, max_steps)
-    assert buffer.logp_buffer.shape == (batch_size, max_steps)
-    assert buffer.gamma == 0.99
-    assert buffer.lam == 0.95
-    assert buffer.obs_buffer.dtype == "float32"
-    assert buffer.act_buffer.dtype == "float32"
-    assert buffer.adv_buffer.dtype == "float32"
-    assert buffer.rew_buffer.dtype == "float32"
-    assert buffer.ret_buffer.dtype == "float32"
-    assert buffer.val_buffer.dtype == "float32"
-    assert buffer.logp_buffer.dtype == "float32"
+class TestRolloutBuffer:
+    """Test class for RolloutBuffer functionality."""
+
+    def test_initialization(self):
+        """Test that RolloutBuffer initializes correctly."""
+        buffer = RolloutBuffer(
+            total_buffer_size=100,
+            observation_dim=16,
+            action_dim=4,
+        )
+
+        assert buffer.total_buffer_size == 100
+        assert buffer.observation_dim == 16
+        assert buffer.action_dim == 4
+        assert buffer.buffer_size == 0
+
+        # Check buffer shapes
+        assert buffer.observation_buffer.shape == (100, 16)
+        assert buffer.action_buffer.shape == (100, 4)
+        assert buffer.reward_buffer.shape == (100,)
+        assert buffer.value_buffer.shape == (100,)
+        assert buffer.log_prob_buffer.shape == (100,)
+        assert buffer.termination_buffer.shape == (100,)
+        assert buffer.advantage_buffer.shape == (100,)
+        assert buffer.return_buffer.shape == (100,)
+
+    def test_reset(self):
+        """Test that reset method clears all buffers."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=4, action_dim=2)
+
+        # Fill buffers with some data
+        buffer.observation_buffer.fill(1.0)
+        buffer.action_buffer.fill(2.0)
+        buffer.reward_buffer.fill(3.0)
+        buffer.buffer_size = 5
+
+        # Reset and verify
+        buffer.reset()
+
+        assert buffer.buffer_size == 0
+        assert np.all(buffer.observation_buffer == 0)
+        assert np.all(buffer.action_buffer == 0)
+        assert np.all(buffer.reward_buffer == 0)
+        assert np.all(buffer.value_buffer == 0)
+        assert np.all(buffer.log_prob_buffer == 0)
+        assert np.all(buffer.termination_buffer == 0)
+        assert np.all(buffer.advantage_buffer == 0)
+        assert np.all(buffer.return_buffer == 0)
+
+    def test_store_batch_single_episode(self):
+        """Test storing a batch with single episodes that terminate."""
+        buffer = RolloutBuffer(total_buffer_size=50, observation_dim=4, action_dim=2)
+
+        # Create test data for 2 environments, each with 5 timesteps
+        batch_size = 2
+        time_steps = 5
+
+        observations = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
+        values = np.random.randn(batch_size, time_steps).astype(np.float32)
+        log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
+
+        # Create terminations - first env terminates at step 3, second at step 4
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 3] = True
+        terminations[1, 4] = True
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Should store 4 steps from first env + 5 steps from second env = 9 total
+        assert buffer.buffer_size == 9
+
+        # Check that data was stored correctly
+        data = buffer.get_buffer_data()
+        assert data["observations"].shape == (9, 4)
+        assert data["actions"].shape == (9, 2)
+        assert data["rewards"].shape == (9,)
+        assert data["terminations"].shape == (9,)
+
+    def test_store_batch_no_termination(self):
+        """Test storing a batch where no episodes terminate."""
+        buffer = RolloutBuffer(total_buffer_size=50, observation_dim=4, action_dim=2)
+
+        batch_size = 2
+        time_steps = 5
+
+        observations = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
+        values = np.random.randn(batch_size, time_steps).astype(np.float32)
+        log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Should store 0 steps since no terminations
+        assert buffer.buffer_size == 0
+
+    def test_store_batch_buffer_overflow(self):
+        """Test that store_batch handles buffer overflow correctly."""
+        buffer = RolloutBuffer(
+            total_buffer_size=5, observation_dim=2, action_dim=1  # Small buffer
+        )
+
+        batch_size = 1
+        time_steps = 10  # More steps than buffer can hold
+
+        observations = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        actions = np.random.randn(batch_size, time_steps, 1).astype(np.float32)
+        rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
+        values = np.random.randn(batch_size, time_steps).astype(np.float32)
+        log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
+
+        # Terminate at step 8 (would be 9 steps total)
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 8] = True
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Should only store 5 steps (buffer capacity)
+        assert buffer.buffer_size == 5
+
+    def test_get_buffer_data(self):
+        """Test that get_buffer_data returns correct data structure."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=3, action_dim=2)
+
+        # Simulate some stored data
+        buffer.buffer_size = 5
+        buffer.observation_buffer[:5] = np.ones((5, 3))
+        buffer.action_buffer[:5] = np.ones((5, 2)) * 2
+        buffer.reward_buffer[:5] = np.ones(5) * 3
+        buffer.value_buffer[:5] = np.ones(5) * 4
+        buffer.log_prob_buffer[:5] = np.ones(5) * 5
+        buffer.termination_buffer[:5] = True
+        buffer.advantage_buffer[:5] = np.ones(5) * 6
+        buffer.return_buffer[:5] = np.ones(5) * 7
+
+        data = buffer.get_buffer_data()
+
+        # Check structure and content
+        expected_keys = {
+            "observations",
+            "actions",
+            "rewards",
+            "values",
+            "log_probs",
+            "terminations",
+            "advantages",
+            "returns",
+        }
+        assert set(data.keys()) == expected_keys
+
+        assert data["observations"].shape == (5, 3)
+        assert data["actions"].shape == (5, 2)
+        assert data["rewards"].shape == (5,)
+        assert np.all(data["observations"] == 1)
+        assert np.all(data["actions"] == 2)
+        assert np.all(data["rewards"] == 3)
+        assert np.all(data["values"] == 4)
+        assert np.all(data["log_probs"] == 5)
+        assert np.all(data["terminations"] == True)
+        assert np.all(data["advantages"] == 6)
+        assert np.all(data["returns"] == 7)
+
+    def test_multiple_store_calls(self):
+        """Test that multiple calls to store_batch accumulate data correctly."""
+        buffer = RolloutBuffer(total_buffer_size=20, observation_dim=2, action_dim=1)
+
+        # First batch
+        batch_size = 1
+        time_steps = 3
+
+        observations1 = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        actions1 = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        rewards1 = np.ones((batch_size, time_steps), dtype=np.float32)
+        values1 = np.ones((batch_size, time_steps), dtype=np.float32)
+        log_probs1 = np.ones((batch_size, time_steps), dtype=np.float32)
+        terminations1 = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations1[0, 2] = True  # Terminate at step 2
+
+        buffer.store_batch(
+            observations1, actions1, rewards1, values1, log_probs1, terminations1
+        )
+
+        assert buffer.buffer_size == 3
+
+        # Second batch
+        observations2 = np.ones((batch_size, time_steps, 2), dtype=np.float32) * 2
+        actions2 = np.ones((batch_size, time_steps, 1), dtype=np.float32) * 2
+        rewards2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
+        values2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
+        log_probs2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
+        terminations2 = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations2[0, 1] = True  # Terminate at step 1
+
+        buffer.store_batch(
+            observations2, actions2, rewards2, values2, log_probs2, terminations2
+        )
+
+        assert buffer.buffer_size == 5  # 3 + 2
+
+        data = buffer.get_buffer_data()
+
+        # Check that first batch data is preserved
+        assert np.all(data["observations"][:3] == 1)
+        assert np.all(data["rewards"][:3] == 1)
+
+        # Check that second batch data is appended
+        assert np.all(data["observations"][3:5] == 2)
+        assert np.all(data["rewards"][3:5] == 2)
+
+    def test_empty_batch_store(self):
+        """Test storing empty batch (batch_size=0)."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+
+        # Create empty batch
+        observations = np.empty((0, 5, 2), dtype=np.float32)
+        actions = np.empty((0, 5, 1), dtype=np.float32)
+        rewards = np.empty((0, 5), dtype=np.float32)
+        values = np.empty((0, 5), dtype=np.float32)
+        log_probs = np.empty((0, 5), dtype=np.float32)
+        terminations = np.empty((0, 5), dtype=bool)
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Buffer should remain empty
+        assert buffer.buffer_size == 0
+
+    def test_termination_at_first_step(self):
+        """Test behavior when episode terminates at the very first step."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+
+        batch_size = 1
+        time_steps = 5
+
+        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        rewards = np.ones((batch_size, time_steps), dtype=np.float32)
+        values = np.ones((batch_size, time_steps), dtype=np.float32)
+        log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
+
+        # Terminate at step 0
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 0] = True
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Should store 1 step (the termination step)
+        assert buffer.buffer_size == 1
+
+    def test_multiple_terminations_in_episode(self):
+        """Test behavior when there are multiple terminations in one episode."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+
+        batch_size = 1
+        time_steps = 5
+
+        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        rewards = np.ones((batch_size, time_steps), dtype=np.float32)
+        values = np.ones((batch_size, time_steps), dtype=np.float32)
+        log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
+
+        # Multiple terminations - should only use the first one
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 2] = True
+        terminations[0, 4] = True
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Should store only up to first termination (3 steps: 0, 1, 2)
+        assert buffer.buffer_size == 3
+
+    def test_dtype_preservation(self):
+        """Test that data types are preserved correctly."""
+        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+
+        batch_size = 1
+        time_steps = 3
+
+        # Create data with specific dtypes
+        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        rewards = np.ones((batch_size, time_steps), dtype=np.float32)
+        values = np.ones((batch_size, time_steps), dtype=np.float32)
+        log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 2] = True
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        data = buffer.get_buffer_data()
+
+        # Check that dtypes are preserved
+        assert data["observations"].dtype == np.float32
+        assert data["actions"].dtype == np.float32
+        assert data["rewards"].dtype == np.float32
+        assert data["values"].dtype == np.float32
+        assert data["log_probs"].dtype == np.float32
+        assert data["terminations"].dtype == bool
+        assert data["advantages"].dtype == np.float32
+        assert data["returns"].dtype == np.float32
+
+    def test_large_batch_processing(self):
+        """Test processing a large batch to ensure performance is reasonable."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10000, observation_dim=64, action_dim=4
+        )
+
+        # Large batch
+        batch_size = 100
+        time_steps = 50
+
+        observations = np.random.randn(batch_size, time_steps, 64).astype(np.float32)
+        actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
+        values = np.random.randn(batch_size, time_steps).astype(np.float32)
+        log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
+
+        # Random terminations
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        for i in range(batch_size):
+            # Random termination between steps 10-40
+            term_step = np.random.randint(10, 40)
+            terminations[i, term_step] = True
+
+        # This should complete without error
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        # Verify some data was stored
+        assert buffer.buffer_size > 0
+        assert buffer.buffer_size <= buffer.total_buffer_size
+
+        data = buffer.get_buffer_data()
+        assert len(data) == 8  # All expected keys
+
+    def test_is_full_property(self):
+        """Test that is_full property works correctly."""
+        buffer = RolloutBuffer(total_buffer_size=5, observation_dim=2, action_dim=1)
+
+        # Initially buffer should not be full
+        assert not buffer.is_full
+        assert buffer.buffer_size == 0
+
+        # Manually set buffer size to test property
+        buffer.buffer_size = 3
+        assert not buffer.is_full
+
+        buffer.buffer_size = 5
+        assert buffer.is_full
+
+        # Test with actual data storage
+        buffer.reset()
+        assert not buffer.is_full
+
+        # Store data that fills the buffer
+        batch_size = 1
+        time_steps = 10
+
+        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        rewards = np.ones((batch_size, time_steps), dtype=np.float32)
+        values = np.ones((batch_size, time_steps), dtype=np.float32)
+        log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
+
+        # Terminate at step 4 to fill the buffer exactly
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 4] = True  # This will store 5 steps (0-4)
+
+        buffer.store_batch(
+            observations, actions, rewards, values, log_probs, terminations
+        )
+
+        assert buffer.is_full
+        assert buffer.buffer_size == 5
