@@ -6,15 +6,18 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "black",
+    "hydra-core>=1.3.2",
     "jax[cuda12]",
     "jupyterlab",
+    "lightning>=2.5.3",
     "matplotlib",
     "numpy",
     "pgx",
     "pytest",
     "torch>2.1",
     "torchaudio",
-    "torchvision"
+    "torcheval>=0.0.7",
+    "torchvision",
 ]
 
 [tool.uv.pip]
