@@ -95,7 +95,7 @@ class BatchRunner:
             subkey = jax.random.split(subkey, batch_size)
             state = self.step_fn(state, action, subkey)
             # Store the observations, actions, rewards, and terminations
-            observations.append(state._board)
+            observations.append(state.observation)
             actions.append(action)
             rewards.append(state.rewards)
             terminations.append(state.terminated | state.truncated)

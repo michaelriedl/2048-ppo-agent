@@ -52,8 +52,10 @@ def test_run_actions_batch(batch_size):
     assert rewards.shape[1] == num_steps
     assert terminations.shape[1] == num_steps
 
-    # Check that observations have correct shape (batch_size, num_steps, 16)
-    assert observations.shape[2] == 16
+    # Check that observations have correct shape (batch_size, num_steps, 4, 4, 31)
+    assert observations.shape[2] == 4
+    assert observations.shape[3] == 4
+    assert observations.shape[4] == 31
 
     # Check that all episodes terminated
     assert terminations[:, -1].all()

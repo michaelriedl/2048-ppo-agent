@@ -129,9 +129,9 @@ class TransformerEncoder(nn.Module):
         self.dim_feedforward = dim_feedforward
         self.dropout = dropout
         # Create the positional encoding
-        self.positional_encoding = PositionalEncoding2D(
-            BOARD_SIZE, BOARD_SIZE, d_model=self.d_model, dropout=self.dropout
-        )
+        # self.positional_encoding = PositionalEncoding2D(
+        #    BOARD_SIZE, BOARD_SIZE, channels=self.d_model, dropout=self.dropout
+        # )
         # Create the transformer encoder
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -158,4 +158,4 @@ class TransformerEncoder(nn.Module):
         torch.Tensor
             The output tensor with shape (batch_size, seq_len, d_model).
         """
-        return self.encoder(self.positional_encoding(src))
+        return self.encoder((src))

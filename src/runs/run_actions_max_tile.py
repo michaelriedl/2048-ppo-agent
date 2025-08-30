@@ -5,6 +5,10 @@ import numpy as np
 from ..stats.running_stats_vec import RunningStatsVec
 from .batch_runner import BatchRunner
 
+# Set dimensions
+OBS_DIM = 31
+BOARD_DIM = 16
+
 
 def run_actions_max_tile(
     init_seed: int, batch_size: int, num_envs: int, act_fn: Callable
@@ -50,6 +54,10 @@ def run_actions_max_tile(
         )
 
         # Get the final board state for each environment (last step)
+        # Flatten the observation
+        observations = observations.reshape(batch_size, -1, BOARD_DIM, OBS_DIM)
+        # Convert the last dimension from one-hot encoding to board representation
+        observations = observations.argmax(-1)
         final_boards = observations[:, -1, :]  # Shape: (batch_size, 16)
 
         # Update the running stats
