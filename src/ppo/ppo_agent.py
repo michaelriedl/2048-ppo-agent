@@ -14,7 +14,7 @@ class PPOAgent(nn.Module):
 
     def __init__(
         self,
-        observation_dim: int = 16,  # 2048 board flattened
+        observation_dim: int = 31,
         action_dim: int = 4,  # up, down, left, right
         hidden_dim: int = 512,
         d_model: int = 256,
@@ -29,7 +29,7 @@ class PPOAgent(nn.Module):
         Parameters
         ----------
         observation_dim : int
-            Dimension of observation space (16 for 2048 game)
+            Dimension of observation space (31 for 2048 game)
         action_dim : int
             Dimension of action space (4 for 2048 game)
         hidden_dim : int
