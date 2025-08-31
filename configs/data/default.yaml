@@ -1,0 +1,2 @@
+# Data configuration
+seed: 42  # Random seed for reproducibility

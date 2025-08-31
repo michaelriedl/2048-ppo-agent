@@ -1,0 +1,156 @@
+import numpy as np
+
+
+class RolloutBuffer:
+    """
+    A class used to store the trajectories of an environment/agent
+    pair for PPO training.
+    """
+
+    def __init__(
+        self,
+        total_buffer_size: int,
+        observation_dim: int,
+        action_dim: int,
+    ) -> None:
+        """
+        Initializes the RolloutBuffer object.
+
+        Parameters
+        ----------
+        total_buffer_size : int
+            The total size of the buffer.
+        observation_dim : int
+            The dimension of the observation space.
+        action_dim : int
+            The dimension of the action space.
+        """
+        # Store the input parameters
+        self.total_buffer_size = total_buffer_size
+        self.observation_dim = observation_dim
+        self.action_dim = action_dim
+
+        # Initialize buffers with flattened dimensions
+        self.observation_buffer = np.zeros(
+            (total_buffer_size, observation_dim), dtype=np.float32
+        )
+        self.termination_buffer = np.zeros(total_buffer_size, dtype=bool)
+        self.action_buffer = np.zeros((total_buffer_size, action_dim), dtype=np.float32)
+        self.advantage_buffer = np.zeros(total_buffer_size, dtype=np.float32)
+        self.reward_buffer = np.zeros(total_buffer_size, dtype=np.float32)
+        self.return_buffer = np.zeros(total_buffer_size, dtype=np.float32)
+        self.value_buffer = np.zeros(total_buffer_size, dtype=np.float32)
+        self.log_prob_buffer = np.zeros(total_buffer_size, dtype=np.float32)
+
+        # Track the actual number of valid entries in the buffer
+        self.buffer_size = 0
+
+    def reset(self):
+        """
+        Resets the buffers to their initial state.
+        """
+        self.observation_buffer.fill(0)
+        self.termination_buffer.fill(0)
+        self.action_buffer.fill(0)
+        self.advantage_buffer.fill(0)
+        self.reward_buffer.fill(0)
+        self.return_buffer.fill(0)
+        self.value_buffer.fill(0)
+        self.log_prob_buffer.fill(0)
+        self.buffer_size = 0
+
+    @property
+    def is_full(self) -> bool:
+        """Check if the buffer is full."""
+        return self.buffer_size == self.total_buffer_size
+
+    def store_batch(
+        self,
+        observations: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        values: np.ndarray,
+        log_probs: np.ndarray,
+        terminations: np.ndarray,
+    ):
+        """
+        Stores a batch of data in the buffer.
+
+        Parameters
+        ----------
+        observations : np.ndarray
+            The observations for the batch. Shape: (batch_size, time_steps, observation_dim)
+        actions : np.ndarray
+            The actions taken in the batch. Shape: (batch_size, time_steps, action_dim)
+        rewards : np.ndarray
+            The rewards received in the batch. Shape: (batch_size, time_steps)
+        values : np.ndarray
+            The value estimates for the batch. Shape: (batch_size, time_steps)
+        log_probs : np.ndarray
+            The log probabilities of the actions taken. Shape: (batch_size, time_steps)
+        terminations : np.ndarray
+            The termination flags for the batch. Shape: (batch_size, time_steps)
+        """
+        # Store the current buffer index
+        buffer_idx = self.buffer_size
+        # Get batch size from the observations array
+        batch_size = observations.shape[0]
+        # Iterate through each batch element
+        for batch_idx in range(batch_size):
+            # Find the first termination index for this batch element
+            termination_indices = np.where(terminations[batch_idx])[0]
+            if len(termination_indices) > 0:
+                # Include the termination step
+                end_idx = termination_indices[0] + 1
+            else:
+                # If no termination found, don't include any steps
+                end_idx = 0
+
+            # Clamp to buffer size
+            end_idx = min(end_idx, self.total_buffer_size - buffer_idx)
+
+            # Store the valid steps for this batch element
+            if end_idx > 0:
+                self.observation_buffer[buffer_idx : buffer_idx + end_idx] = (
+                    observations[batch_idx, :end_idx]
+                )
+                self.action_buffer[buffer_idx : buffer_idx + end_idx] = actions[
+                    batch_idx, :end_idx
+                ]
+                self.reward_buffer[buffer_idx : buffer_idx + end_idx] = rewards[
+                    batch_idx, :end_idx
+                ]
+                self.value_buffer[buffer_idx : buffer_idx + end_idx] = values[
+                    batch_idx, :end_idx
+                ]
+                self.log_prob_buffer[buffer_idx : buffer_idx + end_idx] = log_probs[
+                    batch_idx, :end_idx
+                ]
+                self.termination_buffer[buffer_idx : buffer_idx + end_idx] = (
+                    terminations[batch_idx, :end_idx]
+                )
+                # Update the buffer index
+                buffer_idx += end_idx
+
+        # Update the actual buffer size
+        self.buffer_size = buffer_idx
+
+    def get_buffer_data(self):
+        """
+        Returns the valid data from the buffer.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all buffer data up to buffer_size.
+        """
+        return {
+            "observations": self.observation_buffer[: self.buffer_size],
+            "actions": self.action_buffer[: self.buffer_size],
+            "rewards": self.reward_buffer[: self.buffer_size],
+            "values": self.value_buffer[: self.buffer_size],
+            "log_probs": self.log_prob_buffer[: self.buffer_size],
+            "terminations": self.termination_buffer[: self.buffer_size],
+            "advantages": self.advantage_buffer[: self.buffer_size],
+            "returns": self.return_buffer[: self.buffer_size],
+        }

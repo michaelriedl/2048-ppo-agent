@@ -6,16 +6,24 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "black",
+    "hydra-core>=1.3.2",
     "jax[cuda12]",
     "jupyterlab",
+    "lightning>=2.5.3",
     "matplotlib",
     "numpy",
     "pgx",
     "pytest",
+    "tensorboard>=2.20.0",
     "torch>2.1",
+    "torch2jax",
     "torchaudio",
-    "torchvision"
+    "torcheval>=0.0.7",
+    "torchvision",
 ]
 
 [tool.uv.pip]
 extra-index-url = ["https://download.pytorch.org/whl/cu126"]
+
+[tool.uv.sources]
+torch2jax = { git = "https://github.com/samuela/torch2jax.git", branch = "main" }

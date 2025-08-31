@@ -1,8 +1,8 @@
 from typing import Callable
 
 import jax
+import numpy as np
 import pgx
-from pgx import State
 
 ENV_ID = "2048"
 
@@ -51,7 +51,9 @@ class BatchRunner:
         """
         self._act_fn = jax.jit(jax.vmap(act_fn))
 
-    def run_actions_batch(self, batch_size: int) -> list[State]:
+    def run_actions_batch(
+        self, batch_size: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Run actions in the 2048 environment in parallel environments with a
         batch size of batch_size.
@@ -63,8 +65,14 @@ class BatchRunner:
 
         Returns
         -------
-        states : list[State]
-            List of states.
+        observations : np.ndarray
+            Array of observations from the environments. Expected shape (batch_size, num_steps, 16).
+        actions : np.ndarray
+            Array of actions taken in the environments. Expected shape (batch_size, num_steps).
+        rewards : np.ndarray
+            Array of rewards received from the environments. Expected shape (batch_size, num_steps).
+        terminations : np.ndarray
+            Array of termination flags from the environments. Expected shape (batch_size, num_steps).
         """
         # Check if the action function is set
         if self.act_fn is None:
@@ -75,7 +83,10 @@ class BatchRunner:
         state = self.init_fn(subkey)
 
         # Run the environment
-        states = []
+        observations = []
+        actions = []
+        rewards = []
+        terminations = []
         while not (state.terminated | state.truncated).all():
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
@@ -83,6 +94,15 @@ class BatchRunner:
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
             state = self.step_fn(state, action, subkey)
-            states.append(state)
+            # Store the observations, actions, rewards, and terminations
+            observations.append(state.observation)
+            actions.append(action)
+            rewards.append(state.rewards)
+            terminations.append(state.terminated | state.truncated)
+        # Convert lists to arrays
+        observations = np.stack(observations, axis=1)
+        actions = np.stack(actions, axis=1)
+        rewards = np.concatenate(rewards, axis=1)
+        terminations = np.stack(terminations, axis=1)
 
-        return states
+        return observations, actions, rewards, terminations

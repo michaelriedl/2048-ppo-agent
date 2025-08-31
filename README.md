@@ -9,13 +9,16 @@ This project is a reinforcement learning agent that uses the proximal policy opt
 allowing for fast computation on GPUs.
 
 ## Getting Started
-To get started, clone the repository and install the required dependencies using the following commands:
+To get started, clone the repository and install the required dependencies with uv using the following commands:
 ```bash
 git clone https://github.com/michaelriedl/2048-ppo-agent.git
 cd 2048-ppo-agent
-conda create --name ppo-torch-env python=3.11
-conda activate ppo-torch-env
-pip install -r requirements.txt
+uv sync
+```
+
+You can then run any scripts or notebooks with the `.venv` environment activated.
+```bash
+source .venv/bin/activate
 ```
 
 ## Naive Strategies

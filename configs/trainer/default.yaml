@@ -1,0 +1,21 @@
+# Training configuration
+learning_rate: 3e-4
+gamma: 0.99  # Discount factor
+lambda_gae: 0.95  # GAE lambda
+clip_epsilon: 0.2  # PPO clipping parameter
+value_loss_coef: 0.5
+entropy_coef: 0.01
+max_grad_norm: 0.5
+target_kl: 0.01
+
+# Training loop parameters
+total_timesteps: 1000000
+batch_size: 32  # Parallel environments
+rollout_batches: 4  # Number of rollout batches per iteration
+update_epochs: 4  # Epochs per policy update
+minibatch_size: 64
+save_freq: 10000
+log_freq: 1000
+
+# Buffer configuration
+buffer_size: 10000

@@ -1,0 +1,467 @@
+import logging
+import os
+from typing import Dict, Optional, Tuple
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+from torch2jax import t2j
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
+from ..runs.batch_runner import BatchRunner
+from .data_loader import create_ppo_dataloader
+from .ppo_agent import PPOAgent
+from .rollout_buffer import RolloutBuffer
+
+logger = logging.getLogger(__name__)
+
+
+class PPOTrainer:
+    """
+    PPO Trainer for training the 2048 agent.
+    """
+
+    def __init__(
+        self,
+        agent: PPOAgent,
+        batch_runner: BatchRunner,
+        rollout_buffer: RolloutBuffer,
+        learning_rate: float = 3e-4,
+        gamma: float = 0.99,
+        lambda_gae: float = 0.95,
+        clip_epsilon: float = 0.2,
+        value_loss_coef: float = 0.5,
+        entropy_coef: float = 0.01,
+        max_grad_norm: float = 0.5,
+        target_kl: float = 0.01,
+        device: torch.device = torch.device("cpu"),
+        output_dir: str = "./results",
+    ):
+        """
+        Initialize PPO Trainer.
+
+        Parameters
+        ----------
+        agent : PPOAgent
+            The PPO agent to train
+        batch_runner : BatchRunner
+            Environment batch runner
+        rollout_buffer : RolloutBuffer
+            Buffer for storing rollout data
+        learning_rate : float
+            Learning rate for optimizer
+        gamma : float
+            Discount factor
+        lambda_gae : float
+            GAE lambda parameter
+        clip_epsilon : float
+            PPO clipping parameter
+        value_loss_coef : float
+            Value loss coefficient
+        entropy_coef : float
+            Entropy coefficient
+        max_grad_norm : float
+            Maximum gradient norm for clipping
+        target_kl : float
+            Target KL divergence for early stopping
+        device : torch.device
+            Device to run on
+        output_dir : str
+            Output directory for logs and checkpoints
+        """
+        self.agent = agent.to(device)
+        self.batch_runner = batch_runner
+        self.rollout_buffer = rollout_buffer
+
+        # Hyperparameters
+        self.gamma = gamma
+        self.lambda_gae = lambda_gae
+        self.clip_epsilon = clip_epsilon
+        self.value_loss_coef = value_loss_coef
+        self.entropy_coef = entropy_coef
+        self.max_grad_norm = max_grad_norm
+        self.target_kl = target_kl
+        self.device = device
+
+        # Optimizer
+        self.optimizer = optim.Adam(self.agent.parameters(), lr=learning_rate)
+
+        # Logging
+        self.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        self.writer = SummaryWriter(os.path.join(output_dir, "logs"))
+
+        # Training metrics
+        self.total_timesteps = 0
+        self.episode_rewards = []
+        self.episode_lengths = []
+
+    def collect_rollouts(self, batch_size: int, num_batches: int) -> None:
+        """
+        Collect rollout data using the current policy.
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of parallel environments
+        num_batches : int
+            Number of batches to collect
+        """
+        self.rollout_buffer.reset()
+
+        # Set agent to evaluation mode
+        self.agent.eval()
+
+        # Create action function for BatchRunner
+        from .torch_action_wrapper import TorchActionFunction
+
+        torch_action_fn = TorchActionFunction(self.agent, self.device)
+
+        # Set the action function in batch runner
+        self.batch_runner.act_fn = torch_action_fn
+
+        total_episodes = 0
+
+        with torch.no_grad():
+            for batch_idx in range(num_batches):
+                # Run environments to get trajectory data
+                observations, actions, rewards, terminations = (
+                    self.batch_runner.run_actions_batch(batch_size)
+                )
+
+                # Convert to torch tensors
+                obs_tensor = torch.from_numpy(observations).float().to(self.device)
+
+                # Get values and log probs for each step
+                batch_size_actual, num_steps, obs_dim = observations.shape
+
+                values_list = []
+                log_probs_list = []
+
+                for step in range(num_steps):
+                    step_obs = obs_tensor[:, step, :]  # (batch_size, obs_dim)
+
+                    # Get policy outputs
+                    action_logits, step_values = self.agent.forward(step_obs)
+
+                    # Create distribution and get log probs
+                    from torch.distributions import Categorical
+
+                    dist = Categorical(logits=action_logits)
+                    step_actions = (
+                        torch.from_numpy(actions[:, step]).long().to(self.device)
+                    )
+                    step_log_probs = dist.log_prob(step_actions)
+
+                    values_list.append(step_values.cpu().numpy())
+                    log_probs_list.append(step_log_probs.cpu().numpy())
+
+                # Stack to get proper shapes
+                values = np.stack(values_list, axis=1)  # (batch_size, num_steps)
+                log_probs = np.stack(log_probs_list, axis=1)  # (batch_size, num_steps)
+
+                # Convert actions to proper format for buffer (need to expand dims for action_dim)
+                actions_expanded = np.zeros(
+                    (batch_size_actual, num_steps, 4), dtype=np.float32
+                )
+                for i in range(batch_size_actual):
+                    for j in range(num_steps):
+                        actions_expanded[i, j, actions[i, j]] = 1.0  # One-hot encoding
+
+                # Store in buffer
+                self.rollout_buffer.store_batch(
+                    observations=observations,
+                    actions=actions_expanded,
+                    rewards=rewards,
+                    values=values,
+                    log_probs=log_probs,
+                    terminations=terminations,
+                )
+
+                # Count episodes
+                total_episodes += np.sum(terminations[:, -1])
+
+                # Track episode statistics
+                for env_idx in range(batch_size_actual):
+                    episode_reward = np.sum(rewards[env_idx])
+                    episode_length = num_steps
+                    self.episode_rewards.append(episode_reward)
+                    self.episode_lengths.append(episode_length)
+
+        self.total_timesteps += self.rollout_buffer.buffer_size
+
+        logger.info(
+            f"Collected {self.rollout_buffer.buffer_size} timesteps from {total_episodes} episodes"
+        )
+
+        # Log episode statistics
+        if self.episode_rewards:
+            mean_reward = np.mean(self.episode_rewards[-total_episodes:])
+            mean_length = np.mean(self.episode_lengths[-total_episodes:])
+
+            self.writer.add_scalar(
+                "rollout/mean_episode_reward", mean_reward, self.total_timesteps
+            )
+            self.writer.add_scalar(
+                "rollout/mean_episode_length", mean_length, self.total_timesteps
+            )
+
+    def update_policy(
+        self,
+        batch_size: int = 64,
+        n_epochs: int = 4,
+        minibatch_size: int = 64,
+    ) -> Dict[str, float]:
+        """
+        Update the policy using collected rollout data.
+
+        Parameters
+        ----------
+        batch_size : int
+            Batch size for data loader
+        n_epochs : int
+            Number of epochs to train
+        minibatch_size : int
+            Size of minibatches
+
+        Returns
+        -------
+        Dict[str, float]
+            Training metrics
+        """
+        if self.rollout_buffer.buffer_size == 0:
+            logger.warning("No data in rollout buffer")
+            return {}
+
+        # Get buffer data
+        buffer_data = self.rollout_buffer.get_buffer_data()
+
+        # Create data loader
+        dataloader = create_ppo_dataloader(
+            buffer_data=buffer_data,
+            gamma=self.gamma,
+            lambda_gae=self.lambda_gae,
+            batch_size=minibatch_size,
+            shuffle=True,
+        )
+
+        # Set agent to training mode
+        self.agent.train()
+
+        # Training metrics
+        total_policy_loss = 0.0
+        total_value_loss = 0.0
+        total_entropy_loss = 0.0
+        total_loss = 0.0
+        n_updates = 0
+
+        for epoch in range(n_epochs):
+            epoch_kl_div = 0.0
+            epoch_batches = 0
+
+            for batch in dataloader:
+                # Move batch to device
+                observations = batch["observations"].to(self.device)
+                actions = batch["actions"].to(self.device)
+                old_log_probs = batch["log_probs"].to(self.device)
+                advantages = batch["advantages"].to(self.device)
+                returns = batch["returns"].to(self.device)
+
+                # Convert one-hot actions back to action indices
+                action_indices = actions.argmax(dim=-1)
+
+                # Get current policy outputs
+                new_log_probs, values, entropy = self.agent.evaluate_actions(
+                    observations, action_indices
+                )
+
+                # Calculate ratio (pi_theta / pi_theta_old)
+                ratio = torch.exp(new_log_probs - old_log_probs)
+
+                # Normalize advantages
+                advantages = (advantages - advantages.mean()) / (
+                    advantages.std() + 1e-8
+                )
+
+                # Surrogate loss
+                surr1 = ratio * advantages
+                surr2 = (
+                    torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
+                    * advantages
+                )
+                policy_loss = -torch.min(surr1, surr2).mean()
+
+                # Value loss
+                value_loss = F.mse_loss(values, returns)
+
+                # Entropy loss
+                entropy_loss = -entropy.mean()
+
+                # Total loss
+                loss = (
+                    policy_loss
+                    + self.value_loss_coef * value_loss
+                    + self.entropy_coef * entropy_loss
+                )
+
+                # Optimize
+                self.optimizer.zero_grad()
+                loss.backward()
+
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(
+                    self.agent.parameters(), self.max_grad_norm
+                )
+
+                self.optimizer.step()
+
+                # Update metrics
+                total_policy_loss += policy_loss.item()
+                total_value_loss += value_loss.item()
+                total_entropy_loss += entropy_loss.item()
+                total_loss += loss.item()
+                n_updates += 1
+
+                # Calculate KL divergence for early stopping
+                with torch.no_grad():
+                    kl_div = (old_log_probs - new_log_probs).mean().item()
+                    epoch_kl_div += kl_div
+                    epoch_batches += 1
+
+            # Check for early stopping
+            mean_kl_div = epoch_kl_div / epoch_batches if epoch_batches > 0 else 0
+            if mean_kl_div > self.target_kl:
+                logger.info(
+                    f"Early stopping at epoch {epoch} due to high KL divergence: {mean_kl_div:.6f}"
+                )
+                break
+
+        # Calculate averages
+        metrics = {
+            "policy_loss": total_policy_loss / n_updates if n_updates > 0 else 0,
+            "value_loss": total_value_loss / n_updates if n_updates > 0 else 0,
+            "entropy_loss": total_entropy_loss / n_updates if n_updates > 0 else 0,
+            "total_loss": total_loss / n_updates if n_updates > 0 else 0,
+            "kl_divergence": mean_kl_div,
+            "n_updates": n_updates,
+        }
+
+        # Log metrics
+        for key, value in metrics.items():
+            self.writer.add_scalar(f"train/{key}", value, self.total_timesteps)
+
+        return metrics
+
+    def save_checkpoint(self, filename: str) -> None:
+        """
+        Save model checkpoint.
+
+        Parameters
+        ----------
+        filename : str
+            Filename for the checkpoint
+        """
+        checkpoint = {
+            "agent_state_dict": self.agent.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "total_timesteps": self.total_timesteps,
+            "episode_rewards": self.episode_rewards,
+            "episode_lengths": self.episode_lengths,
+        }
+
+        filepath = os.path.join(self.output_dir, filename)
+        torch.save(checkpoint, filepath)
+        logger.info(f"Checkpoint saved to {filepath}")
+
+    def load_checkpoint(self, filename: str) -> None:
+        """
+        Load model checkpoint.
+
+        Parameters
+        ----------
+        filename : str
+            Filename of the checkpoint
+        """
+        filepath = os.path.join(self.output_dir, filename)
+        checkpoint = torch.load(filepath, map_location=self.device)
+
+        self.agent.load_state_dict(checkpoint["agent_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.total_timesteps = checkpoint.get("total_timesteps", 0)
+        self.episode_rewards = checkpoint.get("episode_rewards", [])
+        self.episode_lengths = checkpoint.get("episode_lengths", [])
+
+        logger.info(f"Checkpoint loaded from {filepath}")
+
+    def train(
+        self,
+        total_timesteps: int,
+        batch_size: int = 32,
+        rollout_batches: int = 4,
+        update_epochs: int = 4,
+        minibatch_size: int = 64,
+        save_freq: int = 10000,
+        log_freq: int = 1000,
+    ) -> None:
+        """
+        Main training loop.
+
+        Parameters
+        ----------
+        total_timesteps : int
+            Total timesteps to train for
+        batch_size : int
+            Batch size for environment rollouts
+        rollout_batches : int
+            Number of rollout batches to collect per iteration
+        update_epochs : int
+            Number of epochs per policy update
+        minibatch_size : int
+            Minibatch size for policy updates
+        save_freq : int
+            Frequency to save checkpoints
+        log_freq : int
+            Frequency to log metrics
+        """
+        logger.info(f"Starting PPO training for {total_timesteps} timesteps")
+
+        iteration = 0
+
+        while self.total_timesteps < total_timesteps:
+            iteration += 1
+
+            # Collect rollouts
+            self.collect_rollouts(batch_size, rollout_batches)
+
+            # Update policy
+            metrics = self.update_policy(
+                batch_size=batch_size,
+                n_epochs=update_epochs,
+                minibatch_size=minibatch_size,
+            )
+
+            # Log metrics
+            if iteration % (log_freq // (batch_size * rollout_batches)) == 0:
+                logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
+                if metrics:
+                    logger.info(
+                        f"Policy Loss: {metrics['policy_loss']:.4f}, "
+                        f"Value Loss: {metrics['value_loss']:.4f}, "
+                        f"Entropy: {metrics['entropy_loss']:.4f}"
+                    )
+
+                if self.episode_rewards:
+                    recent_rewards = self.episode_rewards[-100:]
+                    logger.info(
+                        f"Mean Episode Reward (last 100): {np.mean(recent_rewards):.2f}"
+                    )
+
+            # Save checkpoint
+            if self.total_timesteps % save_freq < (batch_size * rollout_batches):
+                self.save_checkpoint(f"checkpoint_{iteration}.pt")
+
+        logger.info("Training completed!")
+        self.save_checkpoint("final_model.pt")
+        self.writer.close()

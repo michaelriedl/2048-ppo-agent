@@ -1,0 +1,9 @@
+# Model configuration for transformer-based PPO agent
+observation_dim: 31 
+action_dim: 4  # up, down, left, right
+hidden_dim: 512
+d_model: 256
+nhead: 8
+num_layers: 4
+dim_feedforward: 1024
+dropout: 0.1
