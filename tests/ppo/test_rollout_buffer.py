@@ -30,8 +30,6 @@ class TestRolloutBuffer:
         assert buffer.value_buffer.shape == (100,)
         assert buffer.log_prob_buffer.shape == (100,)
         assert buffer.termination_buffer.shape == (100,)
-        assert buffer.advantage_buffer.shape == (100,)
-        assert buffer.return_buffer.shape == (100,)
 
     def test_reset(self):
         """Test that reset method clears all buffers."""
@@ -53,8 +51,6 @@ class TestRolloutBuffer:
         assert np.all(buffer.value_buffer == 0)
         assert np.all(buffer.log_prob_buffer == 0)
         assert np.all(buffer.termination_buffer == 0)
-        assert np.all(buffer.advantage_buffer == 0)
-        assert np.all(buffer.return_buffer == 0)
 
     def test_store_batch_single_episode(self):
         """Test storing a batch with single episodes that terminate."""
@@ -148,8 +144,6 @@ class TestRolloutBuffer:
         buffer.value_buffer[:5] = np.ones(5) * 4
         buffer.log_prob_buffer[:5] = np.ones(5) * 5
         buffer.termination_buffer[:5] = True
-        buffer.advantage_buffer[:5] = np.ones(5) * 6
-        buffer.return_buffer[:5] = np.ones(5) * 7
 
         data = buffer.get_buffer_data()
 
@@ -161,8 +155,6 @@ class TestRolloutBuffer:
             "values",
             "log_probs",
             "terminations",
-            "advantages",
-            "returns",
         }
         assert set(data.keys()) == expected_keys
 
@@ -175,8 +167,6 @@ class TestRolloutBuffer:
         assert np.all(data["values"] == 4)
         assert np.all(data["log_probs"] == 5)
         assert np.all(data["terminations"] == True)
-        assert np.all(data["advantages"] == 6)
-        assert np.all(data["returns"] == 7)
 
     def test_multiple_store_calls(self):
         """Test that multiple calls to store_batch accumulate data correctly."""
@@ -322,8 +312,6 @@ class TestRolloutBuffer:
         assert data["values"].dtype == np.float32
         assert data["log_probs"].dtype == np.float32
         assert data["terminations"].dtype == bool
-        assert data["advantages"].dtype == np.float32
-        assert data["returns"].dtype == np.float32
 
     def test_large_batch_processing(self):
         """Test processing a large batch to ensure performance is reasonable."""
@@ -358,7 +346,7 @@ class TestRolloutBuffer:
         assert buffer.buffer_size <= buffer.total_buffer_size
 
         data = buffer.get_buffer_data()
-        assert len(data) == 8  # All expected keys
+        assert len(data) == 6  # All expected keys
 
     def test_is_full_property(self):
         """Test that is_full property works correctly."""

@@ -36,9 +36,7 @@ class RolloutBuffer:
         )
         self.termination_buffer = np.zeros(total_buffer_size, dtype=bool)
         self.action_buffer = np.zeros((total_buffer_size, action_dim), dtype=np.float32)
-        self.advantage_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.reward_buffer = np.zeros(total_buffer_size, dtype=np.float32)
-        self.return_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.value_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.log_prob_buffer = np.zeros(total_buffer_size, dtype=np.float32)
 
@@ -52,9 +50,7 @@ class RolloutBuffer:
         self.observation_buffer.fill(0)
         self.termination_buffer.fill(0)
         self.action_buffer.fill(0)
-        self.advantage_buffer.fill(0)
         self.reward_buffer.fill(0)
-        self.return_buffer.fill(0)
         self.value_buffer.fill(0)
         self.log_prob_buffer.fill(0)
         self.buffer_size = 0
@@ -151,6 +147,4 @@ class RolloutBuffer:
             "values": self.value_buffer[: self.buffer_size],
             "log_probs": self.log_prob_buffer[: self.buffer_size],
             "terminations": self.termination_buffer[: self.buffer_size],
-            "advantages": self.advantage_buffer[: self.buffer_size],
-            "returns": self.return_buffer[: self.buffer_size],
         }
