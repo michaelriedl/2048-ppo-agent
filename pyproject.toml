@@ -14,6 +14,7 @@ dependencies = [
     "numpy",
     "pgx",
     "pytest",
+    "pytest-cov>=6.2.1",
     "tensorboard>=2.20.0",
     "torch>2.1",
     "torch2jax",
