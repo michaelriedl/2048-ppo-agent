@@ -70,5 +70,6 @@ class TorchActionFunction:
             action_logits = jnp.maximum(
                 action_logits, jnp.finfo(action_logits.dtype).min
             )
+            action_logits = action_logits.reshape(-1)
 
         return jax.random.categorical(rng_key, logits=action_logits)
