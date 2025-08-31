@@ -52,7 +52,7 @@ class PositionalEncoding2D(nn.Module):
         :param tensor: A 4d tensor of size (batch_size, x, y, ch)
         :return: Tensor of the same size with the positional encoding added
         """
-        tensor = tensor + self.pe[:, : tensor.size(1), : tensor.size(2)]
+        tensor = tensor + self.pe[:, : tensor.shape[1], : tensor.shape[2]]
 
         return self.dropout(tensor)
 
@@ -62,7 +62,7 @@ class PositionalEncoding2D(nn.Module):
             that x and y are the same x_size and y_size as the embedding.
         :return: Tensor of the same size with the positional encoding added
         """
-        pe = self.pe.flatten(1, 2)
+        pe = self.pe.reshape(1, -1, self.org_channels)
         tensor = tensor + pe
         return self.dropout(tensor)
 
@@ -86,7 +86,7 @@ class PositionalEncoding2D(nn.Module):
 
         """
         # Flatten the positional encoding
-        pe = self.pe.flatten(1, 2)
+        pe = self.pe.reshape(1, -1, self.org_channels)
         x = x + pe[0, inds]
 
         return self.dropout(x)
@@ -129,9 +129,9 @@ class TransformerEncoder(nn.Module):
         self.dim_feedforward = dim_feedforward
         self.dropout = dropout
         # Create the positional encoding
-        # self.positional_encoding = PositionalEncoding2D(
-        #    BOARD_SIZE, BOARD_SIZE, channels=self.d_model, dropout=self.dropout
-        # )
+        self.positional_encoding = PositionalEncoding2D(
+            BOARD_SIZE, BOARD_SIZE, channels=self.d_model, dropout=self.dropout
+        )
         # Create the transformer encoder
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -158,4 +158,4 @@ class TransformerEncoder(nn.Module):
         torch.Tensor
             The output tensor with shape (batch_size, seq_len, d_model).
         """
-        return self.encoder((src))
+        return self.encoder(self.positional_encoding.forward_flat(src))
