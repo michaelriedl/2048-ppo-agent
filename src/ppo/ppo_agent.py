@@ -106,7 +106,7 @@ class PPOAgent(nn.Module):
         transformer_out = self.transformer(embedded)
 
         # Reduce the sequence to a single embedding
-        features = transformer_out.mean(axis=1)
+        features = transformer_out.mean(dim=1)
 
         # Actor output (action logits)
         action_logits = self.actor(features)
