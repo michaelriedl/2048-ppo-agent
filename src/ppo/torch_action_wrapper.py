@@ -36,14 +36,14 @@ class TorchActionFunction:
 
     def __call__(
         self, rng_key: jax.Array, obs: jax.Array, mask: jax.Array
-    ) -> jax.Array:
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
         """
         JAX-compatible action function.
 
         Parameters
         ----------
         rng_key : jax.Array
-            JAX random key (unused, but required for compatibility)
+            JAX random key for action sampling
         obs : jax.Array
             Observation with shape (4, 4, 31)
         mask : jax.Array
@@ -51,8 +51,12 @@ class TorchActionFunction:
 
         Returns
         -------
-        jax.Array
+        action : jax.Array
             Selected action
+        log_prob : jax.Array
+            Log probability of the selected action
+        value : jax.Array
+            Value estimate from the critic
         """
         with torch.no_grad():
             # Reshape the observation
@@ -63,13 +67,22 @@ class TorchActionFunction:
             if mask.ndim == 1:
                 mask = mask.reshape(1, -1)
             # Get action from agent
-            action_logits, _ = jax.jit(self.agent)(
+            action_logits, values = jax.jit(self.agent)(
                 obs, mask, state_dict=self._agent_state
             )
             # Clip action logits
             action_logits = jnp.maximum(
                 action_logits, jnp.finfo(action_logits.dtype).min
             )
-            action_logits = action_logits.reshape(-1)
+            action_logits = action_logits.squeeze()
 
-        return jax.random.categorical(rng_key, logits=action_logits)
+            # Sample action and compute log probability
+            action = jax.random.categorical(rng_key, logits=action_logits)
+            log_prob = action_logits[action] - jax.scipy.special.logsumexp(
+                action_logits
+            )
+
+            # Extract scalar value
+            value = values.squeeze()
+
+        return action, log_prob, value
