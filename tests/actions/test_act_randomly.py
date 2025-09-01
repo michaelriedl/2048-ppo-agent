@@ -13,10 +13,13 @@ def test_call():
     obs = jax.random.uniform(rng_key, (4, 4, 31))
     mask = jax.random.uniform(rng_key, (4,)) > 0.5
     mask = mask.astype(jax.numpy.bool)
-    act = act_randomly(rng_key, obs, mask)
-    assert act.shape == ()
-    assert (act >= 0).all()
-    assert (act < 4).all()
+    action, log_prob, value = act_randomly(rng_key, obs, mask)
+    assert action.shape == ()
+    assert (action >= 0).all()
+    assert (action < 4).all()
+    assert log_prob.shape == ()
+    assert jax.numpy.isfinite(log_prob)
+    assert value is None
 
 
 @pytest.mark.parametrize("batch_size", [1, 10, 100])
@@ -27,16 +30,24 @@ def test_call_vmap(batch_size):
     mask = jax.random.uniform(rng_key, (batch_size, 4)) > 0.5
     mask = mask.astype(jax.numpy.bool)
     act_fn = jax.jit(jax.vmap(act_randomly))
-    act = act_fn(subkey, obs, mask)
-    assert act.shape == (batch_size,)
-    assert (act >= 0).all()
-    assert (act < 4).all()
+    actions, log_probs, values = act_fn(subkey, obs, mask)
+    assert actions.shape == (batch_size,)
+    assert (actions >= 0).all()
+    assert (actions < 4).all()
+    assert log_probs.shape == (batch_size,)
+    assert jax.numpy.isfinite(log_probs).all()
+    assert values is None
 
 
 def test_legal_actions():
     rng_key = jax.random.PRNGKey(0)
     obs = jax.random.uniform(rng_key, (4, 4, 31))
     mask = jax.numpy.array([True, False, True, False])
-    act = act_randomly(rng_key, obs, mask)
-    assert act.shape == ()
-    assert (act == 0) or (act == 2)
+    action, log_prob, value = act_randomly(rng_key, obs, mask)
+    assert action.shape == ()
+    assert (action == 0) or (action == 2)  # Should choose from legal actions only
+    assert log_prob.shape == ()
+    assert jax.numpy.isclose(
+        log_prob, jax.numpy.log(0.5)
+    )  # Equal probability for 2 legal actions
+    assert value is None
