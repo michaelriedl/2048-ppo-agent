@@ -89,7 +89,6 @@ def main(cfg: DictConfig) -> Optional[float]:
         max_grad_norm=cfg.trainer.max_grad_norm,
         target_kl=cfg.trainer.target_kl,
         device=device,
-        output_dir=cfg.paths.output_dir,
     )
 
     logger.info("Starting training loop")
