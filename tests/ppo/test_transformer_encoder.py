@@ -7,8 +7,8 @@ import pytest
 import torch
 import torch.nn as nn
 
+from src.env_definitions import BOARD_DIM
 from src.ppo.transformer_encoder import (
-    BOARD_SIZE,
     PositionalEncoding2D,
     TransformerEncoder,
     get_emb,
@@ -330,8 +330,8 @@ class TestTransformerEncoder:
         batch_size, d_model = 4, 64
 
         # Note: For this specific encoder, sequence length should be 16 (4x4)
-        # since positional encoding is fixed to BOARD_SIZE x BOARD_SIZE
-        seq_len = BOARD_SIZE * BOARD_SIZE
+        # since positional encoding is fixed to BOARD_DIM[0] x BOARD_DIM[1]
+        seq_len = BOARD_DIM[0] * BOARD_DIM[1]
         input_tensor = torch.randn(batch_size, seq_len, d_model)
         output = encoder.forward(input_tensor)
         assert output.shape == (batch_size, seq_len, d_model)
@@ -622,9 +622,9 @@ class TestTransformerEncoder:
         assert output.shape == (4, 16, 64)
 
     def test_board_size_compatibility(self):
-        """Test that transformer is compatible with BOARD_SIZE."""
-        # The transformer expects sequence length of BOARD_SIZE^2
-        expected_seq_len = BOARD_SIZE * BOARD_SIZE
+        """Test that transformer is compatible with BOARD_DIM."""
+        # The transformer expects sequence length of BOARD_DIM[0] * BOARD_DIM[1]
+        expected_seq_len = BOARD_DIM[0] * BOARD_DIM[1]
 
         encoder = TransformerEncoder(
             d_model=64, nhead=4, num_layers=1, dim_feedforward=256

@@ -7,6 +7,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from src.env_definitions import ACTION_DIM, OBS_DIM
 from src.ppo.ppo_agent import PPOAgent
 
 
@@ -17,8 +18,8 @@ class TestPPOAgent:
     def agent(self):
         """Create a PPOAgent instance for testing."""
         return PPOAgent(
-            observation_dim=31,
-            action_dim=4,
+            observation_dim=OBS_DIM,
+            action_dim=ACTION_DIM,
             hidden_dim=256,
             d_model=128,
             nhead=4,
@@ -32,14 +33,14 @@ class TestPPOAgent:
         """Create sample observations for testing."""
         batch_size = 8
         board_dim = 16  # Flattened 4x4 board
-        observation_dim = 31
+        observation_dim = OBS_DIM
         return torch.randn(batch_size, board_dim, observation_dim)
 
     @pytest.fixture
     def sample_action_mask(self):
         """Create sample action mask for testing."""
         batch_size = 8
-        action_dim = 4
+        action_dim = ACTION_DIM
         # Create random binary mask
         mask = torch.randint(0, 2, (batch_size, action_dim)).float()
         # Ensure at least one action is available per batch
@@ -49,8 +50,8 @@ class TestPPOAgent:
     def test_initialization(self, agent):
         """Test that PPOAgent initializes correctly."""
         assert isinstance(agent, nn.Module)
-        assert agent.observation_dim == 31
-        assert agent.action_dim == 4
+        assert agent.observation_dim == OBS_DIM
+        assert agent.action_dim == ACTION_DIM
         assert agent.hidden_dim == 256
 
         # Check that all components are initialized
@@ -67,8 +68,8 @@ class TestPPOAgent:
     def test_initialization_default_params(self):
         """Test PPOAgent initialization with default parameters."""
         agent = PPOAgent()
-        assert agent.observation_dim == 31  # Default is now 31
-        assert agent.action_dim == 4
+        assert agent.observation_dim == OBS_DIM  # Default is now OBS_DIM
+        assert agent.action_dim == ACTION_DIM
         assert agent.hidden_dim == 512
 
     def test_initialization_custom_params(self):
@@ -276,7 +277,7 @@ class TestPPOAgent:
         """Test that agent works with different batch sizes."""
         batch_sizes = [1, 4, 16, 32]
         board_dim = 16
-        observation_dim = 31
+        observation_dim = OBS_DIM
 
         for batch_size in batch_sizes:
             observations = torch.randn(batch_size, board_dim, observation_dim)
@@ -380,8 +381,8 @@ class TestPPOAgent:
 
             # Create new agent and load state
             new_agent = PPOAgent(
-                observation_dim=31,
-                action_dim=4,
+                observation_dim=OBS_DIM,
+                action_dim=ACTION_DIM,
                 hidden_dim=256,
                 d_model=128,
                 nhead=4,
@@ -401,7 +402,7 @@ class TestPPOAgent:
         """Test action mask edge cases."""
         batch_size = 4
         board_dim = 16
-        observation_dim = 31
+        observation_dim = OBS_DIM
         observations = torch.randn(batch_size, board_dim, observation_dim)
 
         # Test with all actions allowed
@@ -548,7 +549,7 @@ class TestPPOAgent:
         """Test numerical stability with extreme inputs."""
         batch_size = 4
         board_dim = 16
-        observation_dim = 31
+        observation_dim = OBS_DIM
 
         # Test with very large values
         large_obs = torch.full((batch_size, board_dim, observation_dim), 1e3)
