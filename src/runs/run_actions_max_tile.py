@@ -49,8 +49,8 @@ def run_actions_max_tile(
     for _ in range(num_envs // batch_size):
 
         # Run the batch of environments
-        observations, actions, rewards, terminations = runner.run_actions_batch(
-            batch_size
+        observations, actions, log_probs, values, rewards, terminations = (
+            runner.run_actions_batch(batch_size)
         )
 
         # Get the final board state for each environment (last step)
