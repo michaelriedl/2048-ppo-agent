@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 
+from ..env_definitions import ACTION_DIM, OBS_DIM
 from .transformer_encoder import TransformerEncoder
 
 
@@ -14,8 +15,8 @@ class PPOAgent(nn.Module):
 
     def __init__(
         self,
-        observation_dim: int = 31,
-        action_dim: int = 4,  # up, down, left, right
+        observation_dim: int = OBS_DIM,
+        action_dim: int = ACTION_DIM,  # up, down, left, right
         hidden_dim: int = 512,
         d_model: int = 256,
         nhead: int = 8,

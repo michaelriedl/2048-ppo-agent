@@ -3,10 +3,8 @@ import jax.numpy as jnp
 import torch
 from torch2jax import t2j
 
+from ..env_definitions import BOARD_FLAT_DIM, OBS_DIM
 from .ppo_agent import PPOAgent
-
-OBS_DIM = 31
-BOARD_DIM = 16
 
 
 class TorchActionFunction:
@@ -60,10 +58,10 @@ class TorchActionFunction:
         """
         with torch.no_grad():
             # Reshape the observation
-            obs = obs.reshape(BOARD_DIM, OBS_DIM)
+            obs = obs.reshape(BOARD_FLAT_DIM, OBS_DIM)
             # If there is no batch dimension, add one to the obs and mask
             if obs.ndim == 2:
-                obs = obs.reshape(1, BOARD_DIM, OBS_DIM)
+                obs = obs.reshape(1, BOARD_FLAT_DIM, OBS_DIM)
             if mask.ndim == 1:
                 mask = mask.reshape(1, -1)
             # Get action from agent
