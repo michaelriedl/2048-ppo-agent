@@ -11,6 +11,7 @@ class RolloutBuffer:
         self,
         total_buffer_size: int,
         observation_dim: int,
+        observation_length: int | list | tuple,
         action_dim: int,
     ) -> None:
         """
@@ -28,12 +29,15 @@ class RolloutBuffer:
         # Store the input parameters
         self.total_buffer_size = total_buffer_size
         self.observation_dim = observation_dim
+        self.observation_length = observation_length
         self.action_dim = action_dim
 
-        # Initialize buffers with flattened dimensions
-        self.observation_buffer = np.zeros(
-            (total_buffer_size, observation_dim), dtype=np.float32
-        )
+        # Initialize buffers with provided dimensions
+        if isinstance(observation_length, (tuple, list)):
+            obs_dim = (total_buffer_size, *observation_length, observation_dim)
+        else:
+            obs_dim = (total_buffer_size, observation_length, observation_dim)
+        self.observation_buffer = np.zeros(obs_dim, dtype=np.float32)
         self.termination_buffer = np.zeros(total_buffer_size, dtype=bool)
         self.action_buffer = np.zeros((total_buffer_size, action_dim), dtype=np.float32)
         self.reward_buffer = np.zeros(total_buffer_size, dtype=np.float32)

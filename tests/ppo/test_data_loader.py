@@ -134,14 +134,21 @@ class TestFactoryFunction:
     @pytest.fixture
     def sample_buffer_data(self):
         """Create sample buffer data using RolloutBuffer."""
-        buffer = RolloutBuffer(total_buffer_size=100, observation_dim=16, action_dim=4)
+        buffer = RolloutBuffer(
+            total_buffer_size=100,
+            observation_dim=16,
+            observation_length=20,
+            action_dim=4,
+        )
 
         # Add some sample data
         np.random.seed(42)
         batch_size = 5
         time_steps = 20
 
-        observations = np.random.randn(batch_size, time_steps, 16).astype(np.float32)
+        observations = np.random.randn(batch_size, time_steps, 20, 16).astype(
+            np.float32
+        )
         actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -208,7 +215,10 @@ class TestFactoryFunction:
             batch = batches[0]
             batch_size = batch["observations"].shape[0]
 
-            assert batch["observations"].shape[1] == 16  # observation dim
+            assert batch["observations"].shape[1:] == (
+                20,
+                16,
+            )  # observation_length, observation_dim
             assert batch["actions"].shape == (batch_size, 4)  # action dim
             assert batch["rewards"].shape == (batch_size,)
             assert batch["values"].shape == (batch_size,)

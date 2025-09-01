@@ -15,16 +15,18 @@ class TestRolloutBuffer:
         buffer = RolloutBuffer(
             total_buffer_size=100,
             observation_dim=16,
+            observation_length=10,
             action_dim=4,
         )
 
         assert buffer.total_buffer_size == 100
         assert buffer.observation_dim == 16
+        assert buffer.observation_length == 10
         assert buffer.action_dim == 4
         assert buffer.buffer_size == 0
 
         # Check buffer shapes
-        assert buffer.observation_buffer.shape == (100, 16)
+        assert buffer.observation_buffer.shape == (100, 10, 16)
         assert buffer.action_buffer.shape == (100, 4)
         assert buffer.reward_buffer.shape == (100,)
         assert buffer.value_buffer.shape == (100,)
@@ -33,7 +35,9 @@ class TestRolloutBuffer:
 
     def test_reset(self):
         """Test that reset method clears all buffers."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=4, action_dim=2)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=4, observation_length=5, action_dim=2
+        )
 
         # Fill buffers with some data
         buffer.observation_buffer.fill(1.0)
@@ -54,13 +58,15 @@ class TestRolloutBuffer:
 
     def test_store_batch_single_episode(self):
         """Test storing a batch with single episodes that terminate."""
-        buffer = RolloutBuffer(total_buffer_size=50, observation_dim=4, action_dim=2)
+        buffer = RolloutBuffer(
+            total_buffer_size=50, observation_dim=4, observation_length=5, action_dim=2
+        )
 
         # Create test data for 2 environments, each with 5 timesteps
         batch_size = 2
         time_steps = 5
 
-        observations = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        observations = np.random.randn(batch_size, time_steps, 5, 4).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -80,19 +86,21 @@ class TestRolloutBuffer:
 
         # Check that data was stored correctly
         data = buffer.get_buffer_data()
-        assert data["observations"].shape == (9, 4)
+        assert data["observations"].shape == (9, 5, 4)
         assert data["actions"].shape == (9, 2)
         assert data["rewards"].shape == (9,)
         assert data["terminations"].shape == (9,)
 
     def test_store_batch_no_termination(self):
         """Test storing a batch where no episodes terminate."""
-        buffer = RolloutBuffer(total_buffer_size=50, observation_dim=4, action_dim=2)
+        buffer = RolloutBuffer(
+            total_buffer_size=50, observation_dim=4, observation_length=5, action_dim=2
+        )
 
         batch_size = 2
         time_steps = 5
 
-        observations = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        observations = np.random.randn(batch_size, time_steps, 5, 4).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -109,13 +117,16 @@ class TestRolloutBuffer:
     def test_store_batch_buffer_overflow(self):
         """Test that store_batch handles buffer overflow correctly."""
         buffer = RolloutBuffer(
-            total_buffer_size=5, observation_dim=2, action_dim=1  # Small buffer
+            total_buffer_size=5,
+            observation_dim=2,
+            observation_length=3,
+            action_dim=1,  # Small buffer
         )
 
         batch_size = 1
         time_steps = 10  # More steps than buffer can hold
 
-        observations = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        observations = np.random.randn(batch_size, time_steps, 3, 2).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 1).astype(np.float32)
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -134,11 +145,13 @@ class TestRolloutBuffer:
 
     def test_get_buffer_data(self):
         """Test that get_buffer_data returns correct data structure."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=3, action_dim=2)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=3, observation_length=4, action_dim=2
+        )
 
         # Simulate some stored data
         buffer.buffer_size = 5
-        buffer.observation_buffer[:5] = np.ones((5, 3))
+        buffer.observation_buffer[:5] = np.ones((5, 4, 3))
         buffer.action_buffer[:5] = np.ones((5, 2)) * 2
         buffer.reward_buffer[:5] = np.ones(5) * 3
         buffer.value_buffer[:5] = np.ones(5) * 4
@@ -158,7 +171,7 @@ class TestRolloutBuffer:
         }
         assert set(data.keys()) == expected_keys
 
-        assert data["observations"].shape == (5, 3)
+        assert data["observations"].shape == (5, 4, 3)
         assert data["actions"].shape == (5, 2)
         assert data["rewards"].shape == (5,)
         assert np.all(data["observations"] == 1)
@@ -170,13 +183,15 @@ class TestRolloutBuffer:
 
     def test_multiple_store_calls(self):
         """Test that multiple calls to store_batch accumulate data correctly."""
-        buffer = RolloutBuffer(total_buffer_size=20, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=20, observation_dim=2, observation_length=3, action_dim=1
+        )
 
         # First batch
         batch_size = 1
         time_steps = 3
 
-        observations1 = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        observations1 = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions1 = np.ones((batch_size, time_steps, 1), dtype=np.float32)
         rewards1 = np.ones((batch_size, time_steps), dtype=np.float32)
         values1 = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -191,7 +206,7 @@ class TestRolloutBuffer:
         assert buffer.buffer_size == 3
 
         # Second batch
-        observations2 = np.ones((batch_size, time_steps, 2), dtype=np.float32) * 2
+        observations2 = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32) * 2
         actions2 = np.ones((batch_size, time_steps, 1), dtype=np.float32) * 2
         rewards2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
         values2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
@@ -217,10 +232,12 @@ class TestRolloutBuffer:
 
     def test_empty_batch_store(self):
         """Test storing empty batch (batch_size=0)."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
+        )
 
         # Create empty batch
-        observations = np.empty((0, 5, 2), dtype=np.float32)
+        observations = np.empty((0, 5, 5, 2), dtype=np.float32)
         actions = np.empty((0, 5, 1), dtype=np.float32)
         rewards = np.empty((0, 5), dtype=np.float32)
         values = np.empty((0, 5), dtype=np.float32)
@@ -236,12 +253,14 @@ class TestRolloutBuffer:
 
     def test_termination_at_first_step(self):
         """Test behavior when episode terminates at the very first step."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
+        )
 
         batch_size = 1
         time_steps = 5
 
-        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        observations = np.ones((batch_size, time_steps, 5, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -260,12 +279,14 @@ class TestRolloutBuffer:
 
     def test_multiple_terminations_in_episode(self):
         """Test behavior when there are multiple terminations in one episode."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
+        )
 
         batch_size = 1
         time_steps = 5
 
-        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        observations = np.ones((batch_size, time_steps, 5, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -285,13 +306,15 @@ class TestRolloutBuffer:
 
     def test_dtype_preservation(self):
         """Test that data types are preserved correctly."""
-        buffer = RolloutBuffer(total_buffer_size=10, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=10, observation_dim=2, observation_length=3, action_dim=1
+        )
 
         batch_size = 1
         time_steps = 3
 
         # Create data with specific dtypes
-        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        observations = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -316,14 +339,19 @@ class TestRolloutBuffer:
     def test_large_batch_processing(self):
         """Test processing a large batch to ensure performance is reasonable."""
         buffer = RolloutBuffer(
-            total_buffer_size=10000, observation_dim=64, action_dim=4
+            total_buffer_size=10000,
+            observation_dim=64,
+            observation_length=50,
+            action_dim=4,
         )
 
         # Large batch
         batch_size = 100
         time_steps = 50
 
-        observations = np.random.randn(batch_size, time_steps, 64).astype(np.float32)
+        observations = np.random.randn(batch_size, time_steps, 50, 64).astype(
+            np.float32
+        )
         actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -350,7 +378,9 @@ class TestRolloutBuffer:
 
     def test_is_full_property(self):
         """Test that is_full property works correctly."""
-        buffer = RolloutBuffer(total_buffer_size=5, observation_dim=2, action_dim=1)
+        buffer = RolloutBuffer(
+            total_buffer_size=5, observation_dim=2, observation_length=3, action_dim=1
+        )
 
         # Initially buffer should not be full
         assert not buffer.is_full
@@ -371,7 +401,7 @@ class TestRolloutBuffer:
         batch_size = 1
         time_steps = 10
 
-        observations = np.ones((batch_size, time_steps, 2), dtype=np.float32)
+        observations = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -387,3 +417,49 @@ class TestRolloutBuffer:
 
         assert buffer.is_full
         assert buffer.buffer_size == 5
+
+    def test_initialization_with_tuple_observation_length(self):
+        """Test that RolloutBuffer initializes correctly with tuple observation_length."""
+        buffer = RolloutBuffer(
+            total_buffer_size=50,
+            observation_dim=8,
+            observation_length=(4, 4),  # 2D observation space
+            action_dim=2,
+        )
+
+        assert buffer.total_buffer_size == 50
+        assert buffer.observation_dim == 8
+        assert buffer.observation_length == (4, 4)
+        assert buffer.action_dim == 2
+        assert buffer.buffer_size == 0
+
+        # Check buffer shapes - should be (50, 4, 4, 8)
+        assert buffer.observation_buffer.shape == (50, 4, 4, 8)
+        assert buffer.action_buffer.shape == (50, 2)
+        assert buffer.reward_buffer.shape == (50,)
+        assert buffer.value_buffer.shape == (50,)
+        assert buffer.log_prob_buffer.shape == (50,)
+        assert buffer.termination_buffer.shape == (50,)
+
+    def test_initialization_with_list_observation_length(self):
+        """Test that RolloutBuffer initializes correctly with list observation_length."""
+        buffer = RolloutBuffer(
+            total_buffer_size=30,
+            observation_dim=4,
+            observation_length=[2, 3, 5],  # 3D observation space
+            action_dim=3,
+        )
+
+        assert buffer.total_buffer_size == 30
+        assert buffer.observation_dim == 4
+        assert buffer.observation_length == [2, 3, 5]
+        assert buffer.action_dim == 3
+        assert buffer.buffer_size == 0
+
+        # Check buffer shapes - should be (30, 2, 3, 5, 4)
+        assert buffer.observation_buffer.shape == (30, 2, 3, 5, 4)
+        assert buffer.action_buffer.shape == (30, 3)
+        assert buffer.reward_buffer.shape == (30,)
+        assert buffer.value_buffer.shape == (30,)
+        assert buffer.log_prob_buffer.shape == (30,)
+        assert buffer.termination_buffer.shape == (30,)
