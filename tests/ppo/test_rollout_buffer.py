@@ -463,3 +463,172 @@ class TestRolloutBuffer:
         assert buffer.value_buffer.shape == (30,)
         assert buffer.log_prob_buffer.shape == (30,)
         assert buffer.termination_buffer.shape == (30,)
+
+    def test_validate_and_reshape_observations_correct_shape(self):
+        """Test that observations with correct shape pass through unchanged."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=4,
+            observation_length=5,
+            action_dim=2,
+        )
+
+        # Create observations with correct shape: (batch_size, time_steps, 5, 4)
+        batch_size = 3
+        time_steps = 7
+        observations = np.random.randn(batch_size, time_steps, 5, 4).astype(np.float32)
+
+        result = buffer._validate_and_reshape_observations(observations)
+
+        # Should return the same array unchanged
+        assert np.array_equal(result, observations)
+        assert result.shape == (batch_size, time_steps, 5, 4)
+
+    def test_validate_and_reshape_observations_flattened_input(self):
+        """Test that flattened observations can be reshaped correctly."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=4,
+            observation_length=5,
+            action_dim=2,
+        )
+
+        # Create flattened observations: (batch_size, time_steps, 20) instead of (batch_size, time_steps, 5, 4)
+        batch_size = 3
+        time_steps = 6
+        flattened_observations = np.random.randn(batch_size, time_steps, 20).astype(
+            np.float32
+        )
+
+        result = buffer._validate_and_reshape_observations(flattened_observations)
+
+        # Should be reshaped to (batch_size, time_steps, 5, 4)
+        assert result.shape == (batch_size, time_steps, 5, 4)
+
+        # Verify data is preserved (flatten result should match input)
+        assert np.array_equal(
+            result.reshape(batch_size, time_steps, -1), flattened_observations
+        )
+
+    def test_validate_and_reshape_observations_2d_to_3d(self):
+        """Test reshaping observations with 2D observation_length when flattened."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=3,
+            observation_length=(4, 4),  # 2D spatial observation
+            action_dim=2,
+        )
+
+        # Create observations with shape (batch_size, time_steps, 48) -> should become (batch_size, time_steps, 4, 4, 3)
+        batch_size = 2
+        time_steps = 5
+        flattened_observations = np.random.randn(batch_size, time_steps, 48).astype(
+            np.float32
+        )
+
+        result = buffer._validate_and_reshape_observations(flattened_observations)
+
+        # Should be reshaped to (batch_size, time_steps, 4, 4, 3)
+        assert result.shape == (batch_size, time_steps, 4, 4, 3)
+
+        # Verify data is preserved
+        assert np.array_equal(
+            result.reshape(batch_size, time_steps, -1), flattened_observations
+        )
+
+    def test_validate_and_reshape_observations_incompatible_shape(self):
+        """Test that incompatible observation shapes raise ValueError."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=4,
+            observation_length=5,
+            action_dim=2,
+        )
+
+        # Create observations with wrong number of elements: (batch_size, time_steps, 15) instead of 20
+        batch_size = 3
+        time_steps = 4
+        wrong_observations = np.random.randn(batch_size, time_steps, 15).astype(
+            np.float32
+        )
+
+        try:
+            buffer._validate_and_reshape_observations(wrong_observations)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "Cannot reshape observations" in str(e)
+            assert "15 elements per timestep but expected 20 elements" in str(e)
+
+    def test_validate_and_reshape_observations_complex_shape_mismatch(self):
+        """Test error handling with complex shape mismatches."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=2,
+            observation_length=(
+                3,
+                4,
+            ),  # Expected: (batch_size, time_steps, 3, 4, 2) = 24 elements per timestep
+            action_dim=1,
+        )
+
+        # Create observations with wrong shape that can't be reshaped
+        batch_size = 2
+        time_steps = 3
+        wrong_observations = np.random.randn(batch_size, time_steps, 49).astype(
+            np.float32
+        )  # 49 elements per timestep ≠ 24
+
+        try:
+            buffer._validate_and_reshape_observations(wrong_observations)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "Cannot reshape observations" in str(e)
+
+    def test_validate_and_reshape_observations_insufficient_dimensions(self):
+        """Test that observations with insufficient dimensions raise ValueError."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=4,
+            observation_length=5,
+            action_dim=2,
+        )
+
+        # Create observations with only 1 dimension (should have at least 2)
+        wrong_observations = np.random.randn(10).astype(np.float32)
+
+        try:
+            buffer._validate_and_reshape_observations(wrong_observations)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "Observations must have at least 2 dimensions" in str(e)
+            assert "but got shape (10,)" in str(e)
+
+    def test_validate_and_reshape_observations_tuple_observation_length(self):
+        """Test validation and reshaping with tuple observation_length."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=3,
+            observation_length=(4, 4),  # 2D spatial observation
+            action_dim=2,
+        )
+
+        # Test with correct shape: (batch_size, time_steps, 4, 4, 3)
+        batch_size = 2
+        time_steps = 6
+        correct_observations = np.random.randn(batch_size, time_steps, 4, 4, 3).astype(
+            np.float32
+        )
+
+        result = buffer._validate_and_reshape_observations(correct_observations)
+        assert np.array_equal(result, correct_observations)
+        assert result.shape == (batch_size, time_steps, 4, 4, 3)
+
+        # Test with flattened input: (batch_size, time_steps, 48) -> (batch_size, time_steps, 4, 4, 3)
+        flattened_observations = np.random.randn(batch_size, time_steps, 48).astype(
+            np.float32
+        )
+        result = buffer._validate_and_reshape_observations(flattened_observations)
+        assert result.shape == (batch_size, time_steps, 4, 4, 3)
+        assert np.array_equal(
+            result.reshape(batch_size, time_steps, -1), flattened_observations
+        )
