@@ -60,26 +60,23 @@ class PPODataset(Dataset):
         advantages = torch.zeros_like(self.rewards)
         returns = torch.zeros_like(self.rewards)
 
-        # Work backwards through the trajectory
-        last_gae_lambda = 0
-
+        # Work backwards through the trajectory to compute advantages and returns
+        last_gae = 0
+        last_return = self.rewards[-1]
+        last_value = self.values[-1]
         for step in reversed(range(len(self.rewards))):
             if self.terminations[step]:
-                # Terminal state - no future value
-                delta = self.rewards[step] - self.values[step]
-                last_gae_lambda = delta
-            else:
-                # Non-terminal state - compute TD error
-                if step < len(self.rewards) - 1:
-                    next_value = self.values[step + 1]
-                else:
-                    next_value = 0.0  # Bootstrap value for last step if not terminal
+                last_return = 0
+                last_value = 0
+                last_gae = 0
+            # Update the discounted return
+            last_return = self.rewards[step] + self.gamma * last_return
+            # Update the GAE
+            delta = self.rewards[step] + self.gamma * last_value - self.values[step]
+            last_gae = delta + self.gamma * self.lambda_gae * last_gae
 
-                delta = self.rewards[step] + self.gamma * next_value - self.values[step]
-                last_gae_lambda = delta + self.gamma * self.lambda_gae * last_gae_lambda
-
-            advantages[step] = last_gae_lambda
-            returns[step] = advantages[step] + self.values[step]
+            advantages[step] = last_gae
+            returns[step] = last_return
 
         return advantages, returns
 

@@ -146,12 +146,16 @@ class PPOTrainer:
                 )
 
                 # Count episodes
-                total_episodes += np.sum(terminations[:, -1])
+                total_episodes += batch_size_actual
 
                 # Track episode statistics
                 for env_idx in range(batch_size_actual):
-                    episode_reward = np.sum(rewards[env_idx])
-                    episode_length = num_steps
+                    episode_reward = np.max(rewards[env_idx])
+                    episode_length = (
+                        np.argmax(terminations[env_idx]) + 1
+                        if np.any(terminations[env_idx])
+                        else num_steps
+                    )
                     self.episode_rewards.append(episode_reward)
                     self.episode_lengths.append(episode_length)
 
@@ -164,10 +168,14 @@ class PPOTrainer:
         # Log episode statistics
         if self.episode_rewards:
             mean_reward = np.mean(self.episode_rewards[-total_episodes:])
+            max_reward = np.max(self.episode_rewards[-total_episodes:])
             mean_length = np.mean(self.episode_lengths[-total_episodes:])
 
             self.writer.add_scalar(
-                "rollout/mean_episode_reward", mean_reward, self.total_timesteps
+                "rollout/mean_max_episode_reward", mean_reward, self.total_timesteps
+            )
+            self.writer.add_scalar(
+                "rollout/max_episode_reward", max_reward, self.total_timesteps
             )
             self.writer.add_scalar(
                 "rollout/mean_episode_length", mean_length, self.total_timesteps
@@ -250,19 +258,23 @@ class PPOTrainer:
                     advantages.std() + 1e-8
                 )
 
+                # Normalize the returns
+                # TODO: Keep a running standard deviation estimate to use for scaling
+                returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+
                 # Surrogate loss
                 surr1 = ratio * advantages
                 surr2 = (
                     torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
                     * advantages
                 )
-                policy_loss = -torch.min(surr1, surr2).mean()
+                policy_loss = -torch.min(surr1, surr2)
 
                 # Value loss
-                value_loss = F.mse_loss(values, returns)
+                value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
 
                 # Entropy loss
-                entropy_loss = -entropy.mean()
+                entropy_loss = -entropy
 
                 # Total loss
                 loss = (
@@ -270,6 +282,7 @@ class PPOTrainer:
                     + self.value_loss_coef * value_loss
                     + self.entropy_coef * entropy_loss
                 )
+                loss = loss.mean()
 
                 # Optimize
                 self.optimizer.zero_grad()
@@ -283,9 +296,9 @@ class PPOTrainer:
                 self.optimizer.step()
 
                 # Update metrics
-                total_policy_loss += policy_loss.item()
-                total_value_loss += value_loss.item()
-                total_entropy_loss += entropy_loss.item()
+                total_policy_loss += policy_loss.mean().item()
+                total_value_loss += value_loss.mean().item()
+                total_entropy_loss += entropy_loss.mean().item()
                 total_loss += loss.item()
                 n_updates += 1
 
