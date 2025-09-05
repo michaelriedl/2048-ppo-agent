@@ -62,21 +62,18 @@ class PPODataset(Dataset):
 
         # Work backwards through the trajectory to compute advantages and returns
         last_gae = 0
-        last_return = self.rewards[-1]
-        last_value = self.values[-1]
+        last_value = 0
         for step in reversed(range(len(self.rewards))):
             if self.terminations[step]:
-                last_return = 0
                 last_value = 0
                 last_gae = 0
-            # Update the discounted return
-            last_return = self.rewards[step] + self.gamma * last_return
             # Update the GAE
             delta = self.rewards[step] + self.gamma * last_value - self.values[step]
             last_gae = delta + self.gamma * self.lambda_gae * last_gae
 
             advantages[step] = last_gae
-            returns[step] = last_return
+            returns[step] = last_gae + self.values[step]
+            last_value = self.values[step]
 
         return advantages, returns
 
