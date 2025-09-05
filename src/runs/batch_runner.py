@@ -114,14 +114,16 @@ class BatchRunner:
         while not (state.terminated | state.truncated).all():
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
+            # Store the observation
+            observation = state.observation
             action, log_prob, value = self.act_fn(
-                subkey, state.observation, state.legal_action_mask
+                subkey, observation, state.legal_action_mask
             )
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
             state = self.step_fn(state, action, subkey)
             # Store the observations, actions, rewards, and terminations
-            observations.append(state.observation)
+            observations.append(observation)
             actions.append(action)
             log_probs.append(log_prob)
             values.append(value)
