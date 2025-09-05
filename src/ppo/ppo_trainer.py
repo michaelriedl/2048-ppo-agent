@@ -110,7 +110,9 @@ class PPOTrainer:
         self.agent.eval()
 
         # Create action function for BatchRunner
-        torch_action_fn = TorchActionFunction(self.agent, self.device)
+        torch_action_fn = TorchActionFunction(
+            self.agent, use_mask=False, device=self.device
+        )
 
         # Set the action function in batch runner
         self.batch_runner.act_fn = torch_action_fn
@@ -218,6 +220,7 @@ class PPOTrainer:
             lambda_gae=self.lambda_gae,
             batch_size=minibatch_size,
             shuffle=True,
+            drop_last=True,
         )
 
         # Set agent to training mode
@@ -253,28 +256,19 @@ class PPOTrainer:
                 # Calculate ratio (pi_theta / pi_theta_old)
                 ratio = torch.exp(new_log_probs - old_log_probs)
 
-                # Normalize advantages
-                advantages = (advantages - advantages.mean()) / (
-                    advantages.std() + 1e-8
-                )
-
-                # Normalize the returns
-                # TODO: Keep a running standard deviation estimate to use for scaling
-                returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-
                 # Surrogate loss
                 surr1 = ratio * advantages
                 surr2 = (
                     torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
                     * advantages
                 )
-                policy_loss = -torch.min(surr1, surr2)
+                policy_loss = -torch.min(surr1, surr2).mean()
 
                 # Value loss
-                value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
+                value_loss = F.mse_loss(values.flatten(), returns)
 
                 # Entropy loss
-                entropy_loss = -entropy
+                entropy_loss = -entropy.mean()
 
                 # Total loss
                 loss = (
@@ -282,7 +276,6 @@ class PPOTrainer:
                     + self.value_loss_coef * value_loss
                     + self.entropy_coef * entropy_loss
                 )
-                loss = loss.mean()
 
                 # Optimize
                 self.optimizer.zero_grad()
@@ -296,9 +289,9 @@ class PPOTrainer:
                 self.optimizer.step()
 
                 # Update metrics
-                total_policy_loss += policy_loss.mean().item()
-                total_value_loss += value_loss.mean().item()
-                total_entropy_loss += entropy_loss.mean().item()
+                total_policy_loss += policy_loss.item()
+                total_value_loss += value_loss.item()
+                total_entropy_loss += entropy_loss.item()
                 total_loss += loss.item()
                 n_updates += 1
 
@@ -329,6 +322,12 @@ class PPOTrainer:
         # Log metrics
         for key, value in metrics.items():
             self.writer.add_scalar(f"train/{key}", value, self.total_timesteps)
+
+        # Log the distribution of the magnitude of the model parameters
+        for name, param in self.agent.named_parameters():
+            self.writer.add_histogram(
+                f"train/param_magnitude/{name}", param.data, self.total_timesteps
+            )
 
         return metrics
 

@@ -34,7 +34,7 @@ class TestLogProbConsistency:
     @pytest.fixture
     def torch_action_function(self, agent):
         """Create TorchActionFunction wrapper."""
-        return TorchActionFunction(agent, device=torch.device("cpu"))
+        return TorchActionFunction(agent, use_mask=True, device=torch.device("cpu"))
 
     @pytest.fixture
     def sample_observation(self):

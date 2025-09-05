@@ -236,6 +236,7 @@ class TestFactoryFunction:
             lambda_gae=0.95,
             batch_size=32,
             shuffle=False,
+            drop_last=False,
         )
 
         # Check that we have valid data

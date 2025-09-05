@@ -51,7 +51,7 @@ class TestPPOIntegration:
     @pytest.fixture
     def torch_action_wrapper(self, agent):
         """Create a TorchActionFunction wrapper for testing."""
-        return TorchActionFunction(agent, device=torch.device("cpu"))
+        return TorchActionFunction(agent, use_mask=True, device=torch.device("cpu"))
 
     def test_torch_action_wrapper_creation(self, agent):
         """Test that TorchActionWrapper can be created with a PPO agent."""
