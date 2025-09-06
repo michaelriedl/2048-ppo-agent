@@ -259,20 +259,20 @@ class PPOTrainer:
                     torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
                     * advantages
                 )
-                policy_loss = -torch.min(surr1, surr2).mean()
+                policy_loss = -torch.min(surr1, surr2)
 
                 # Value loss
-                value_loss = F.mse_loss(values.flatten(), returns)
+                value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
 
                 # Entropy loss
-                entropy_loss = -entropy.mean()
+                entropy_loss = -entropy
 
                 # Total loss
                 loss = (
                     policy_loss
                     + self.value_loss_coef * value_loss
                     + self.entropy_coef * entropy_loss
-                )
+                ).mean()
 
                 # Optimize
                 self.optimizer.zero_grad()
@@ -286,9 +286,9 @@ class PPOTrainer:
                 self.optimizer.step()
 
                 # Update metrics
-                total_policy_loss += policy_loss.item()
-                total_value_loss += value_loss.item()
-                total_entropy_loss += entropy_loss.item()
+                total_policy_loss += policy_loss.mean().item()
+                total_value_loss += value_loss.mean().item()
+                total_entropy_loss += entropy_loss.mean().item()
                 total_loss += loss.item()
                 n_updates += 1
 
@@ -430,7 +430,9 @@ class PPOTrainer:
                     )
 
             # Save checkpoint
-            if self.total_timesteps % save_freq < (batch_size * rollout_batches):
+            if self.total_timesteps % save_freq < (
+                rollout_batch_size * rollout_batches
+            ):
                 self.save_checkpoint(f"checkpoint_{iteration}.pt")
 
         logger.info("Training completed!")
