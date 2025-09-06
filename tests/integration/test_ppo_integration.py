@@ -169,7 +169,9 @@ class TestPPOIntegration:
     def test_full_integration_workflow(self, agent, batch_runner):
         """Test the complete integration workflow similar to PPO trainer."""
         # Create torch action wrapper
-        torch_action_fn = TorchActionFunction(agent, device=torch.device("cpu"))
+        torch_action_fn = TorchActionFunction(
+            agent, use_mask=True, device=torch.device("cpu")
+        )
 
         # Set action function in batch runner
         batch_runner.act_fn = torch_action_fn
