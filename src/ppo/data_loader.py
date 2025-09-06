@@ -18,6 +18,7 @@ class PPODataset(Dataset):
         buffer_data: Dict[str, np.ndarray],
         gamma: float = 0.99,
         lambda_gae: float = 0.95,
+        return_norm_scale: float = 20,
     ):
         """
         Initialize the PPO dataset.
@@ -31,9 +32,12 @@ class PPODataset(Dataset):
             Discount factor for returns computation
         lambda_gae : float, default=0.95
             Lambda parameter for GAE computation
+        return_norm_scale : float, default=20
+            Scale factor for return normalization
         """
         self.gamma = gamma
         self.lambda_gae = lambda_gae
+        self.return_norm_scale = return_norm_scale
 
         # Convert numpy arrays to torch tensors
         self.observations = torch.from_numpy(buffer_data["observations"]).float()
@@ -45,6 +49,13 @@ class PPODataset(Dataset):
 
         # Compute advantages and returns
         self.advantages, self.returns = self._compute_gae_returns()
+
+        # Normalize advantages
+        self.advantages = (self.advantages - self.advantages.mean()) / (
+            self.advantages.std() + 1e-8
+        )
+        # Normalize returns
+        self.returns = self.returns / self.return_norm_scale
 
         self.length = len(self.observations)
 
@@ -60,26 +71,20 @@ class PPODataset(Dataset):
         advantages = torch.zeros_like(self.rewards)
         returns = torch.zeros_like(self.rewards)
 
-        # Work backwards through the trajectory
-        last_gae_lambda = 0
-
+        # Work backwards through the trajectory to compute advantages and returns
+        last_gae = 0
+        last_value = 0
         for step in reversed(range(len(self.rewards))):
             if self.terminations[step]:
-                # Terminal state - no future value
-                delta = self.rewards[step] - self.values[step]
-                last_gae_lambda = delta
-            else:
-                # Non-terminal state - compute TD error
-                if step < len(self.rewards) - 1:
-                    next_value = self.values[step + 1]
-                else:
-                    next_value = 0.0  # Bootstrap value for last step if not terminal
+                last_value = 0
+                last_gae = 0
+            # Update the GAE
+            delta = self.rewards[step] + self.gamma * last_value - self.values[step]
+            last_gae = delta + self.gamma * self.lambda_gae * last_gae
 
-                delta = self.rewards[step] + self.gamma * next_value - self.values[step]
-                last_gae_lambda = delta + self.gamma * self.lambda_gae * last_gae_lambda
-
-            advantages[step] = last_gae_lambda
-            returns[step] = advantages[step] + self.values[step]
+            advantages[step] = last_gae
+            returns[step] = last_gae + self.values[step]
+            last_value = self.values[step]
 
         return advantages, returns
 
@@ -119,6 +124,7 @@ def create_ppo_dataloader(
     lambda_gae: float = 0.95,
     batch_size: int = 32,
     shuffle: bool = True,
+    drop_last: bool = True,
     num_workers: int = 0,
 ) -> DataLoader:
     """
@@ -136,6 +142,8 @@ def create_ppo_dataloader(
         Size of batches to create
     shuffle : bool, default=True
         Whether to shuffle the data
+    drop_last : bool, default=True
+        Whether to drop the last incomplete batch
     num_workers : int, default=0
         Number of worker processes for loading
 
@@ -146,5 +154,9 @@ def create_ppo_dataloader(
     """
     dataset = PPODataset(buffer_data, gamma=gamma, lambda_gae=lambda_gae)
     return DataLoader(
-        dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        num_workers=num_workers,
     )

@@ -11,6 +11,7 @@ class RolloutBuffer:
         self,
         total_buffer_size: int,
         observation_dim: int,
+        observation_length: int | list | tuple,
         action_dim: int,
     ) -> None:
         """
@@ -28,17 +29,18 @@ class RolloutBuffer:
         # Store the input parameters
         self.total_buffer_size = total_buffer_size
         self.observation_dim = observation_dim
+        self.observation_length = observation_length
         self.action_dim = action_dim
 
-        # Initialize buffers with flattened dimensions
-        self.observation_buffer = np.zeros(
-            (total_buffer_size, observation_dim), dtype=np.float32
-        )
+        # Initialize buffers with provided dimensions
+        if isinstance(observation_length, (tuple, list)):
+            obs_dim = (total_buffer_size, *observation_length, observation_dim)
+        else:
+            obs_dim = (total_buffer_size, observation_length, observation_dim)
+        self.observation_buffer = np.zeros(obs_dim, dtype=np.float32)
         self.termination_buffer = np.zeros(total_buffer_size, dtype=bool)
         self.action_buffer = np.zeros((total_buffer_size, action_dim), dtype=np.float32)
-        self.advantage_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.reward_buffer = np.zeros(total_buffer_size, dtype=np.float32)
-        self.return_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.value_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.log_prob_buffer = np.zeros(total_buffer_size, dtype=np.float32)
 
@@ -52,9 +54,7 @@ class RolloutBuffer:
         self.observation_buffer.fill(0)
         self.termination_buffer.fill(0)
         self.action_buffer.fill(0)
-        self.advantage_buffer.fill(0)
         self.reward_buffer.fill(0)
-        self.return_buffer.fill(0)
         self.value_buffer.fill(0)
         self.log_prob_buffer.fill(0)
         self.buffer_size = 0
@@ -63,6 +63,76 @@ class RolloutBuffer:
     def is_full(self) -> bool:
         """Check if the buffer is full."""
         return self.buffer_size == self.total_buffer_size
+
+    def _validate_and_reshape_observations(
+        self, observations: np.ndarray
+    ) -> np.ndarray:
+        """
+        Validates and reshapes observations to match the expected buffer shape.
+
+        Parameters
+        ----------
+        observations : np.ndarray
+            The input observations array. Expected shape is
+            (batch_size, time_steps, *observation_length, observation_dim)
+
+        Returns
+        -------
+        np.ndarray
+            Validated and potentially reshaped observations
+
+        Raises
+        ------
+        ValueError
+            If observations cannot be reshaped to match expected dimensions
+        """
+        # Expected shape for each timestep: (*observation_length, observation_dim)
+        if isinstance(self.observation_length, (tuple, list)):
+            expected_obs_dims = (*self.observation_length, self.observation_dim)
+        else:
+            expected_obs_dims = (self.observation_length, self.observation_dim)
+
+        # Validate input dimensions
+        if len(observations.shape) < 2:
+            raise ValueError(
+                f"Observations must have at least 2 dimensions (batch_size, time_steps, ...), "
+                f"but got shape {observations.shape}"
+            )
+
+        batch_size, time_steps = observations.shape[:2]
+
+        # Check if observations already match expected shape
+        if observations.shape[2:] == expected_obs_dims:
+            return observations
+
+        # Try to reshape observations to match expected shape
+        try:
+            # Calculate expected total elements per timestep
+            expected_obs_elements = np.prod(expected_obs_dims)
+
+            # Flatten the observation dimensions after batch_size and time_steps
+            flattened_obs = observations.reshape(batch_size, time_steps, -1)
+
+            # Check if flattened observations can be reshaped to expected shape
+            if flattened_obs.shape[2] == expected_obs_elements:
+                # Reshape to expected shape
+                reshaped_obs = flattened_obs.reshape(
+                    batch_size, time_steps, *expected_obs_dims
+                )
+                return reshaped_obs
+            else:
+                raise ValueError(
+                    f"Cannot reshape observations from shape {observations.shape} to expected shape "
+                    f"(batch_size, time_steps, {expected_obs_dims}). "
+                    f"Flattened observations have {flattened_obs.shape[2]} elements per timestep "
+                    f"but expected {expected_obs_elements} elements."
+                )
+
+        except Exception as e:
+            raise ValueError(
+                f"Failed to reshape observations from shape {observations.shape} to expected shape "
+                f"(batch_size, time_steps, {expected_obs_dims}). Error: {str(e)}"
+            )
 
     def store_batch(
         self,
@@ -91,6 +161,9 @@ class RolloutBuffer:
         terminations : np.ndarray
             The termination flags for the batch. Shape: (batch_size, time_steps)
         """
+        # Validate and reshape observations if necessary
+        observations = self._validate_and_reshape_observations(observations)
+
         # Store the current buffer index
         buffer_idx = self.buffer_size
         # Get batch size from the observations array
@@ -151,6 +224,4 @@ class RolloutBuffer:
             "values": self.value_buffer[: self.buffer_size],
             "log_probs": self.log_prob_buffer[: self.buffer_size],
             "terminations": self.termination_buffer[: self.buffer_size],
-            "advantages": self.advantage_buffer[: self.buffer_size],
-            "returns": self.return_buffer[: self.buffer_size],
         }

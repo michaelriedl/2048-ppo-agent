@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-BOARD_SIZE = 4
+from ..env_definitions import BOARD_DIM
 
 
 def get_emb(sin_inp):
@@ -130,7 +130,7 @@ class TransformerEncoder(nn.Module):
         self.dropout = dropout
         # Create the positional encoding
         self.positional_encoding = PositionalEncoding2D(
-            BOARD_SIZE, BOARD_SIZE, channels=self.d_model, dropout=self.dropout
+            BOARD_DIM[0], BOARD_DIM[1], channels=self.d_model, dropout=self.dropout
         )
         # Create the transformer encoder
         self.encoder = nn.TransformerEncoder(

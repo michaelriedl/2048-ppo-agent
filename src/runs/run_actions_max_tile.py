@@ -2,12 +2,9 @@ from typing import Callable
 
 import numpy as np
 
+from ..env_definitions import BOARD_FLAT_DIM, OBS_DIM
 from ..stats.running_stats_vec import RunningStatsVec
 from .batch_runner import BatchRunner
-
-# Set dimensions
-OBS_DIM = 31
-BOARD_DIM = 16
 
 
 def run_actions_max_tile(
@@ -49,13 +46,13 @@ def run_actions_max_tile(
     for _ in range(num_envs // batch_size):
 
         # Run the batch of environments
-        observations, actions, rewards, terminations = runner.run_actions_batch(
-            batch_size
+        observations, actions, log_probs, values, rewards, terminations = (
+            runner.run_actions_batch(batch_size)
         )
 
         # Get the final board state for each environment (last step)
         # Flatten the observation
-        observations = observations.reshape(batch_size, -1, BOARD_DIM, OBS_DIM)
+        observations = observations.reshape(batch_size, -1, BOARD_FLAT_DIM, OBS_DIM)
         # Convert the last dimension from one-hot encoding to board representation
         observations = observations.argmax(-1)
         final_boards = observations[:, -1, :]  # Shape: (batch_size, 16)

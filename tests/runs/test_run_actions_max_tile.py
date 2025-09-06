@@ -9,7 +9,10 @@ from src.runs.run_actions_max_tile import run_actions_max_tile
 
 
 def act_fn(key, obs, mask):
-    return jax.random.randint(key, (), 0, 4)
+    action = jax.random.randint(key, (), 0, 4)  # Mock action
+    log_prob = jax.random.normal(key, ())  # Mock log probability
+    value = jax.random.normal(key, ())  # Mock value estimate
+    return action, log_prob, value
 
 
 @pytest.mark.parametrize("batch_size", [2, 5])

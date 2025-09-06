@@ -10,7 +10,10 @@ from src.runs.batch_runner import BatchRunner
 
 
 def act_fn(key, obs, mask):
-    return jax.random.randint(key, (), 0, 4)
+    action = jax.random.randint(key, (), 0, 4)
+    log_prob = jax.random.normal(key, ())  # Mock log probability
+    value = jax.random.normal(key, ())  # Mock value estimate
+    return action, log_prob, value
 
 
 @pytest.mark.parametrize("action_fn", [None, act_fn])
@@ -32,23 +35,31 @@ def test_set_act_fn(action_fn):
 @pytest.mark.parametrize("batch_size", [2, 5, 10])
 def test_run_actions_batch(batch_size):
     runner = BatchRunner(init_seed=0, act_fn=act_fn)
-    observations, actions, rewards, terminations = runner.run_actions_batch(batch_size)
+    observations, actions, log_probs, values, rewards, terminations = (
+        runner.run_actions_batch(batch_size)
+    )
 
-    # Check that we get 4 arrays back
+    # Check that we get 6 arrays back
     assert isinstance(observations, np.ndarray)
     assert isinstance(actions, np.ndarray)
+    assert isinstance(log_probs, np.ndarray)
+    assert isinstance(values, np.ndarray)
     assert isinstance(rewards, np.ndarray)
     assert isinstance(terminations, np.ndarray)
 
     # Check batch dimensions
     assert observations.shape[0] == batch_size
     assert actions.shape[0] == batch_size
+    assert log_probs.shape[0] == batch_size
+    assert values.shape[0] == batch_size
     assert rewards.shape[0] == batch_size
     assert terminations.shape[0] == batch_size
 
     # Check that all arrays have the same number of time steps
     num_steps = observations.shape[1]
     assert actions.shape[1] == num_steps
+    assert log_probs.shape[1] == num_steps
+    assert values.shape[1] == num_steps
     assert rewards.shape[1] == num_steps
     assert terminations.shape[1] == num_steps
 
@@ -74,11 +85,37 @@ def test_run_actions_batch_deterministic():
     runner1 = BatchRunner(init_seed=42, act_fn=act_fn)
     runner2 = BatchRunner(init_seed=42, act_fn=act_fn)
 
-    obs1, actions1, rewards1, terms1 = runner1.run_actions_batch(batch_size=3)
-    obs2, actions2, rewards2, terms2 = runner2.run_actions_batch(batch_size=3)
+    obs1, actions1, log_probs1, values1, rewards1, terms1 = runner1.run_actions_batch(
+        batch_size=3
+    )
+    obs2, actions2, log_probs2, values2, rewards2, terms2 = runner2.run_actions_batch(
+        batch_size=3
+    )
 
     # Results should be identical with same seed
     np.testing.assert_array_equal(obs1, obs2)
     np.testing.assert_array_equal(actions1, actions2)
+    np.testing.assert_array_equal(log_probs1, log_probs2)
+    np.testing.assert_array_equal(values1, values2)
     np.testing.assert_array_equal(rewards1, rewards2)
     np.testing.assert_array_equal(terms1, terms2)
+
+
+def test_run_actions_batch_return_values():
+    """Test that log_probs and values have expected properties."""
+    runner = BatchRunner(init_seed=0, act_fn=act_fn)
+    observations, actions, log_probs, values, rewards, terminations = (
+        runner.run_actions_batch(batch_size=3)
+    )
+
+    # Check that log_probs and values are finite numbers
+    assert np.isfinite(log_probs).all(), "Log probabilities should be finite"
+    assert np.isfinite(values).all(), "Values should be finite"
+
+    # Check that actions are in valid range [0, 3]
+    assert (actions >= 0).all() and (
+        actions <= 3
+    ).all(), "Actions should be in range [0, 3]"
+
+    # Check that terminations are boolean-like (0 or 1)
+    assert np.isin(terminations, [0, 1]).all(), "Terminations should be 0 or 1"

@@ -1,5 +1,6 @@
 # Model configuration for transformer-based PPO agent
-observation_dim: 31 
+observation_dim: 31  # Feature dimension per board position
+observation_length: 16  # Board size (sequence length)
 action_dim: 4  # up, down, left, right
 hidden_dim: 512
 d_model: 256

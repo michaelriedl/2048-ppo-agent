@@ -1,19 +1,17 @@
 import logging
-import os
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from torch2jax import t2j
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from ..runs.batch_runner import BatchRunner
 from .data_loader import create_ppo_dataloader
 from .ppo_agent import PPOAgent
 from .rollout_buffer import RolloutBuffer
+from .torch_action_wrapper import TorchActionFunction
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,6 @@ class PPOTrainer:
         max_grad_norm: float = 0.5,
         target_kl: float = 0.01,
         device: torch.device = torch.device("cpu"),
-        output_dir: str = "./results",
     ):
         """
         Initialize PPO Trainer.
@@ -89,9 +86,7 @@ class PPOTrainer:
         self.optimizer = optim.Adam(self.agent.parameters(), lr=learning_rate)
 
         # Logging
-        self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
-        self.writer = SummaryWriter(os.path.join(output_dir, "logs"))
+        self.writer = SummaryWriter("logs")
 
         # Training metrics
         self.total_timesteps = 0
@@ -115,9 +110,9 @@ class PPOTrainer:
         self.agent.eval()
 
         # Create action function for BatchRunner
-        from .torch_action_wrapper import TorchActionFunction
-
-        torch_action_fn = TorchActionFunction(self.agent, self.device)
+        torch_action_fn = TorchActionFunction(
+            self.agent, use_mask=False, device=self.device
+        )
 
         # Set the action function in batch runner
         self.batch_runner.act_fn = torch_action_fn
@@ -127,40 +122,12 @@ class PPOTrainer:
         with torch.no_grad():
             for batch_idx in range(num_batches):
                 # Run environments to get trajectory data
-                observations, actions, rewards, terminations = (
+                observations, actions, log_probs, values, rewards, terminations = (
                     self.batch_runner.run_actions_batch(batch_size)
                 )
 
-                # Convert to torch tensors
-                obs_tensor = torch.from_numpy(observations).float().to(self.device)
-
-                # Get values and log probs for each step
-                batch_size_actual, num_steps, obs_dim = observations.shape
-
-                values_list = []
-                log_probs_list = []
-
-                for step in range(num_steps):
-                    step_obs = obs_tensor[:, step, :]  # (batch_size, obs_dim)
-
-                    # Get policy outputs
-                    action_logits, step_values = self.agent.forward(step_obs)
-
-                    # Create distribution and get log probs
-                    from torch.distributions import Categorical
-
-                    dist = Categorical(logits=action_logits)
-                    step_actions = (
-                        torch.from_numpy(actions[:, step]).long().to(self.device)
-                    )
-                    step_log_probs = dist.log_prob(step_actions)
-
-                    values_list.append(step_values.cpu().numpy())
-                    log_probs_list.append(step_log_probs.cpu().numpy())
-
-                # Stack to get proper shapes
-                values = np.stack(values_list, axis=1)  # (batch_size, num_steps)
-                log_probs = np.stack(log_probs_list, axis=1)  # (batch_size, num_steps)
+                # Convert to torch tensors and move to device if needed
+                batch_size_actual, num_steps = observations.shape[:2]
 
                 # Convert actions to proper format for buffer (need to expand dims for action_dim)
                 actions_expanded = np.zeros(
@@ -181,12 +148,16 @@ class PPOTrainer:
                 )
 
                 # Count episodes
-                total_episodes += np.sum(terminations[:, -1])
+                total_episodes += batch_size_actual
 
                 # Track episode statistics
                 for env_idx in range(batch_size_actual):
-                    episode_reward = np.sum(rewards[env_idx])
-                    episode_length = num_steps
+                    episode_reward = np.max(rewards[env_idx])
+                    episode_length = (
+                        np.argmax(terminations[env_idx]) + 1
+                        if np.any(terminations[env_idx])
+                        else num_steps
+                    )
                     self.episode_rewards.append(episode_reward)
                     self.episode_lengths.append(episode_length)
 
@@ -199,10 +170,14 @@ class PPOTrainer:
         # Log episode statistics
         if self.episode_rewards:
             mean_reward = np.mean(self.episode_rewards[-total_episodes:])
+            max_reward = np.max(self.episode_rewards[-total_episodes:])
             mean_length = np.mean(self.episode_lengths[-total_episodes:])
 
             self.writer.add_scalar(
-                "rollout/mean_episode_reward", mean_reward, self.total_timesteps
+                "rollout/mean_max_episode_reward", mean_reward, self.total_timesteps
+            )
+            self.writer.add_scalar(
+                "rollout/max_episode_reward", max_reward, self.total_timesteps
             )
             self.writer.add_scalar(
                 "rollout/mean_episode_length", mean_length, self.total_timesteps
@@ -212,7 +187,6 @@ class PPOTrainer:
         self,
         batch_size: int = 64,
         n_epochs: int = 4,
-        minibatch_size: int = 64,
     ) -> Dict[str, float]:
         """
         Update the policy using collected rollout data.
@@ -223,8 +197,6 @@ class PPOTrainer:
             Batch size for data loader
         n_epochs : int
             Number of epochs to train
-        minibatch_size : int
-            Size of minibatches
 
         Returns
         -------
@@ -243,8 +215,9 @@ class PPOTrainer:
             buffer_data=buffer_data,
             gamma=self.gamma,
             lambda_gae=self.lambda_gae,
-            batch_size=minibatch_size,
+            batch_size=batch_size,
             shuffle=True,
+            drop_last=True,
         )
 
         # Set agent to training mode
@@ -280,31 +253,26 @@ class PPOTrainer:
                 # Calculate ratio (pi_theta / pi_theta_old)
                 ratio = torch.exp(new_log_probs - old_log_probs)
 
-                # Normalize advantages
-                advantages = (advantages - advantages.mean()) / (
-                    advantages.std() + 1e-8
-                )
-
                 # Surrogate loss
                 surr1 = ratio * advantages
                 surr2 = (
                     torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
                     * advantages
                 )
-                policy_loss = -torch.min(surr1, surr2).mean()
+                policy_loss = -torch.min(surr1, surr2)
 
                 # Value loss
-                value_loss = F.mse_loss(values, returns)
+                value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
 
                 # Entropy loss
-                entropy_loss = -entropy.mean()
+                entropy_loss = -entropy
 
                 # Total loss
                 loss = (
                     policy_loss
                     + self.value_loss_coef * value_loss
                     + self.entropy_coef * entropy_loss
-                )
+                ).mean()
 
                 # Optimize
                 self.optimizer.zero_grad()
@@ -318,9 +286,9 @@ class PPOTrainer:
                 self.optimizer.step()
 
                 # Update metrics
-                total_policy_loss += policy_loss.item()
-                total_value_loss += value_loss.item()
-                total_entropy_loss += entropy_loss.item()
+                total_policy_loss += policy_loss.mean().item()
+                total_value_loss += value_loss.mean().item()
+                total_entropy_loss += entropy_loss.mean().item()
                 total_loss += loss.item()
                 n_updates += 1
 
@@ -352,6 +320,12 @@ class PPOTrainer:
         for key, value in metrics.items():
             self.writer.add_scalar(f"train/{key}", value, self.total_timesteps)
 
+        # Log the distribution of the magnitude of the model parameters
+        for name, param in self.agent.named_parameters():
+            self.writer.add_histogram(
+                f"train/param_magnitude/{name}", param.data, self.total_timesteps
+            )
+
         return metrics
 
     def save_checkpoint(self, filename: str) -> None:
@@ -371,9 +345,8 @@ class PPOTrainer:
             "episode_lengths": self.episode_lengths,
         }
 
-        filepath = os.path.join(self.output_dir, filename)
-        torch.save(checkpoint, filepath)
-        logger.info(f"Checkpoint saved to {filepath}")
+        torch.save(checkpoint, filename)
+        logger.info(f"Checkpoint saved to {filename}")
 
     def load_checkpoint(self, filename: str) -> None:
         """
@@ -384,8 +357,7 @@ class PPOTrainer:
         filename : str
             Filename of the checkpoint
         """
-        filepath = os.path.join(self.output_dir, filename)
-        checkpoint = torch.load(filepath, map_location=self.device)
+        checkpoint = torch.load(filename, map_location=self.device)
 
         self.agent.load_state_dict(checkpoint["agent_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -393,15 +365,15 @@ class PPOTrainer:
         self.episode_rewards = checkpoint.get("episode_rewards", [])
         self.episode_lengths = checkpoint.get("episode_lengths", [])
 
-        logger.info(f"Checkpoint loaded from {filepath}")
+        logger.info(f"Checkpoint loaded from {filename}")
 
     def train(
         self,
         total_timesteps: int,
-        batch_size: int = 32,
+        rollout_batch_size: int = 32,
         rollout_batches: int = 4,
         update_epochs: int = 4,
-        minibatch_size: int = 64,
+        train_batch_size: int = 64,
         save_freq: int = 10000,
         log_freq: int = 1000,
     ) -> None:
@@ -412,13 +384,13 @@ class PPOTrainer:
         ----------
         total_timesteps : int
             Total timesteps to train for
-        batch_size : int
+        rollout_batch_size : int
             Batch size for environment rollouts
         rollout_batches : int
             Number of rollout batches to collect per iteration
         update_epochs : int
             Number of epochs per policy update
-        minibatch_size : int
+        train_batch_size : int
             Minibatch size for policy updates
         save_freq : int
             Frequency to save checkpoints
@@ -433,17 +405,16 @@ class PPOTrainer:
             iteration += 1
 
             # Collect rollouts
-            self.collect_rollouts(batch_size, rollout_batches)
+            self.collect_rollouts(rollout_batch_size, rollout_batches)
 
             # Update policy
             metrics = self.update_policy(
-                batch_size=batch_size,
+                batch_size=train_batch_size,
                 n_epochs=update_epochs,
-                minibatch_size=minibatch_size,
             )
 
             # Log metrics
-            if iteration % (log_freq // (batch_size * rollout_batches)) == 0:
+            if iteration % (log_freq // (rollout_batch_size * rollout_batches)) == 0:
                 logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
                 if metrics:
                     logger.info(
@@ -459,7 +430,9 @@ class PPOTrainer:
                     )
 
             # Save checkpoint
-            if self.total_timesteps % save_freq < (batch_size * rollout_batches):
+            if self.total_timesteps % save_freq < (
+                rollout_batch_size * rollout_batches
+            ):
                 self.save_checkpoint(f"checkpoint_{iteration}.pt")
 
         logger.info("Training completed!")
