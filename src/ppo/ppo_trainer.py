@@ -187,7 +187,6 @@ class PPOTrainer:
         self,
         batch_size: int = 64,
         n_epochs: int = 4,
-        minibatch_size: int = 64,
     ) -> Dict[str, float]:
         """
         Update the policy using collected rollout data.
@@ -198,8 +197,6 @@ class PPOTrainer:
             Batch size for data loader
         n_epochs : int
             Number of epochs to train
-        minibatch_size : int
-            Size of minibatches
 
         Returns
         -------
@@ -218,7 +215,7 @@ class PPOTrainer:
             buffer_data=buffer_data,
             gamma=self.gamma,
             lambda_gae=self.lambda_gae,
-            batch_size=minibatch_size,
+            batch_size=batch_size,
             shuffle=True,
             drop_last=True,
         )
@@ -373,10 +370,10 @@ class PPOTrainer:
     def train(
         self,
         total_timesteps: int,
-        batch_size: int = 32,
+        rollout_batch_size: int = 32,
         rollout_batches: int = 4,
         update_epochs: int = 4,
-        minibatch_size: int = 64,
+        train_batch_size: int = 64,
         save_freq: int = 10000,
         log_freq: int = 1000,
     ) -> None:
@@ -387,13 +384,13 @@ class PPOTrainer:
         ----------
         total_timesteps : int
             Total timesteps to train for
-        batch_size : int
+        rollout_batch_size : int
             Batch size for environment rollouts
         rollout_batches : int
             Number of rollout batches to collect per iteration
         update_epochs : int
             Number of epochs per policy update
-        minibatch_size : int
+        train_batch_size : int
             Minibatch size for policy updates
         save_freq : int
             Frequency to save checkpoints
@@ -408,17 +405,16 @@ class PPOTrainer:
             iteration += 1
 
             # Collect rollouts
-            self.collect_rollouts(batch_size, rollout_batches)
+            self.collect_rollouts(rollout_batch_size, rollout_batches)
 
             # Update policy
             metrics = self.update_policy(
-                batch_size=batch_size,
+                batch_size=train_batch_size,
                 n_epochs=update_epochs,
-                minibatch_size=minibatch_size,
             )
 
             # Log metrics
-            if iteration % (log_freq // (batch_size * rollout_batches)) == 0:
+            if iteration % (log_freq // (rollout_batch_size * rollout_batches)) == 0:
                 logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
                 if metrics:
                     logger.info(

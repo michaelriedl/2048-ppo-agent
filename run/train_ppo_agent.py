@@ -97,10 +97,10 @@ def main(cfg: DictConfig) -> Optional[float]:
     # Train the agent
     trainer.train(
         total_timesteps=cfg.trainer.total_timesteps,
-        batch_size=cfg.trainer.batch_size,
+        rollout_batch_size=cfg.trainer.rollout_batch_size,
         rollout_batches=cfg.trainer.rollout_batches,
         update_epochs=cfg.trainer.update_epochs,
-        minibatch_size=cfg.trainer.minibatch_size,
+        train_batch_size=cfg.trainer.train_batch_size,
         save_freq=cfg.trainer.save_freq,
         log_freq=cfg.trainer.log_freq,
     )
