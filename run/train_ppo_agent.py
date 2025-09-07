@@ -102,7 +102,6 @@ def main(cfg: DictConfig) -> Optional[float]:
         update_epochs=cfg.trainer.update_epochs,
         train_batch_size=cfg.trainer.train_batch_size,
         save_freq=cfg.trainer.save_freq,
-        log_freq=cfg.trainer.log_freq,
     )
 
     # Return final performance metric
