@@ -375,7 +375,6 @@ class PPOTrainer:
         update_epochs: int = 4,
         train_batch_size: int = 64,
         save_freq: int = 10000,
-        log_freq: int = 1000,
     ) -> None:
         """
         Main training loop.
@@ -394,8 +393,6 @@ class PPOTrainer:
             Minibatch size for policy updates
         save_freq : int
             Frequency to save checkpoints
-        log_freq : int
-            Frequency to log metrics
         """
         logger.info(f"Starting PPO training for {total_timesteps} timesteps")
 
@@ -414,20 +411,19 @@ class PPOTrainer:
             )
 
             # Log metrics
-            if iteration % (log_freq // (rollout_batch_size * rollout_batches)) == 0:
-                logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
-                if metrics:
-                    logger.info(
-                        f"Policy Loss: {metrics['policy_loss']:.4f}, "
-                        f"Value Loss: {metrics['value_loss']:.4f}, "
-                        f"Entropy: {metrics['entropy_loss']:.4f}"
-                    )
+            logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
+            if metrics:
+                logger.info(
+                    f"Policy Loss: {metrics['policy_loss']:.4f}, "
+                    f"Value Loss: {metrics['value_loss']:.4f}, "
+                    f"Entropy: {metrics['entropy_loss']:.4f}"
+                )
 
-                if self.episode_rewards:
-                    recent_rewards = self.episode_rewards[-100:]
-                    logger.info(
-                        f"Mean Episode Reward (last 100): {np.mean(recent_rewards):.2f}"
-                    )
+            if self.episode_rewards:
+                recent_rewards = self.episode_rewards[-100:]
+                logger.info(
+                    f"Mean Episode Reward (last 100): {np.mean(recent_rewards):.2f}"
+                )
 
             # Save checkpoint
             if self.total_timesteps % save_freq < (
