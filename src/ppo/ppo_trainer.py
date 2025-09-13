@@ -92,6 +92,7 @@ class PPOTrainer:
         self.total_timesteps = 0
         self.episode_rewards = []
         self.episode_lengths = []
+        self.last_save_timestep = 0
 
     def collect_rollouts(self, batch_size: int, num_batches: int) -> None:
         """
@@ -343,6 +344,7 @@ class PPOTrainer:
             "total_timesteps": self.total_timesteps,
             "episode_rewards": self.episode_rewards,
             "episode_lengths": self.episode_lengths,
+            "last_save_timestep": self.last_save_timestep,
         }
 
         torch.save(checkpoint, filename)
@@ -364,6 +366,7 @@ class PPOTrainer:
         self.total_timesteps = checkpoint.get("total_timesteps", 0)
         self.episode_rewards = checkpoint.get("episode_rewards", [])
         self.episode_lengths = checkpoint.get("episode_lengths", [])
+        self.last_save_timestep = checkpoint.get("last_save_timestep", 0)
 
         logger.info(f"Checkpoint loaded from {filename}")
 
@@ -426,10 +429,9 @@ class PPOTrainer:
                 )
 
             # Save checkpoint
-            if self.total_timesteps % save_freq < (
-                rollout_batch_size * rollout_batches
-            ):
+            if self.total_timesteps - self.last_save_timestep >= save_freq:
                 self.save_checkpoint(f"checkpoint_{iteration}.pt")
+                self.last_save_timestep = self.total_timesteps
 
         logger.info("Training completed!")
         self.save_checkpoint("final_model.pt")

@@ -14,7 +14,7 @@ rollout_batch_size: 512  # Parallel environments
 rollout_batches: 10  # Number of rollout batches per iteration
 update_epochs: 4  # Epochs per policy update
 train_batch_size: 64
-save_freq: 100000
+save_freq: 1000000
 
 # Buffer configuration
 buffer_size: 100000
