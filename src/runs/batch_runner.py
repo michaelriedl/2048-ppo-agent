@@ -138,3 +138,44 @@ class BatchRunner:
         terminations = np.stack(terminations, axis=1)
 
         return observations, actions, log_probs, values, rewards, terminations
+
+    def run_rollout_batch(self, batch_size: int) -> list:
+        """
+        Run actions in the 2048 environment in parallel environments with a
+        batch size of batch_size.
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of parallel environments to run.
+
+        Returns
+        -------
+        list
+            A list containing all the states.
+        """
+        # Check if the action function is set
+        if self.act_fn is None:
+            raise ValueError("The action function is not set.")
+        # Initialize the states
+        self.key, subkey = jax.random.split(self.key)
+        subkey = jax.random.split(subkey, batch_size)
+        state = self.init_fn(subkey)
+
+        # Run the environment
+        states = [state]
+        while not (state.terminated | state.truncated).all():
+            self.key, subkey = jax.random.split(self.key)
+            subkey = jax.random.split(subkey, batch_size)
+            # Store the observation
+            observation = state.observation
+            action, log_prob, value = self.act_fn(
+                subkey, observation, state.legal_action_mask
+            )
+            self.key, subkey = jax.random.split(self.key)
+            subkey = jax.random.split(subkey, batch_size)
+            state = self.step_fn(state, action, subkey)
+            # Store the state
+            states.append(state)
+
+        return states

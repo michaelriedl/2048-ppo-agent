@@ -1,40 +1,105 @@
-#!/usr/bin/env python3
 """
 Visualization script for trained PPO agent playing 2048.
 
 This script loads a trained PPO model and visualizes gameplay rollouts,
 creating SVG animations of the agent playing the game.
+The script automatically reads the Hydra configuration used during training
+to properly instantiate the model before loading weights.
 """
 
+import argparse
 import logging
 import os
 import sys
 from pathlib import Path
 
-import jax
 import pgx
 import torch
-from IPython.display import SVG, display
+import yaml
+from omegaconf import DictConfig, OmegaConf
 
 # Add parent directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from src.env_definitions import ACTION_DIM, OBS_DIM
 from src.ppo import PPOAgent
+from src.ppo.torch_action_wrapper import TorchActionFunction
+from src.runs import BatchRunner
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def load_trained_agent(checkpoint_path: str, device: torch.device) -> PPOAgent:
+def load_hydra_config(results_dir: str) -> DictConfig:
     """
-    Load a trained PPO agent from checkpoint.
+    Load the Hydra configuration from a results directory.
 
     Parameters
     ----------
-    checkpoint_path : str
-        Path to the model checkpoint
+    results_dir : str
+        Path to the results directory containing .hydra folder
+
+    Returns
+    -------
+    DictConfig
+        Loaded Hydra configuration
+    """
+    config_path = Path(results_dir) / ".hydra" / "config.yaml"
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Hydra config not found at {config_path}. "
+            f"Make sure {results_dir} is a valid results directory from a training run."
+        )
+
+    logger.info(f"Loading Hydra config from {config_path}")
+
+    with open(config_path, "r") as f:
+        config_dict = yaml.safe_load(f)
+
+    # Convert to OmegaConf DictConfig for compatibility
+    cfg = OmegaConf.create(config_dict)
+
+    return cfg
+
+
+def find_checkpoint_in_dir(results_dir: str) -> str:
+    """
+    Find the checkpoint file in the specified results directory.
+
+    Parameters
+    ----------
+    results_dir : str
+        Path to the results directory
+
+    Returns
+    -------
+    str
+        Path to the checkpoint file
+    """
+    results_path = Path(results_dir)
+
+    # Look for .pt files in the results directory
+    checkpoint_files = list(results_path.glob("*.pt"))
+
+    if not checkpoint_files:
+        raise FileNotFoundError(f"No checkpoint files (.pt) found in {results_dir}")
+
+    if len(checkpoint_files) > 1:
+        logger.warning(f"Multiple checkpoint files found, using: {checkpoint_files[0]}")
+
+    return str(checkpoint_files[0])
+
+
+def load_trained_agent(results_dir: str, device: torch.device) -> PPOAgent:
+    """
+    Load a trained PPO agent from results directory.
+    Automatically reads the Hydra config to instantiate the model correctly.
+
+    Parameters
+    ----------
+    results_dir : str
+        Path to the results directory containing both config and checkpoint
     device : torch.device
         Device to load the model on
 
@@ -43,19 +108,24 @@ def load_trained_agent(checkpoint_path: str, device: torch.device) -> PPOAgent:
     PPOAgent
         Loaded PPO agent
     """
+    # Load the Hydra configuration
+    cfg = load_hydra_config(results_dir)
+
+    # Find the checkpoint file
+    checkpoint_path = find_checkpoint_in_dir(results_dir)
+
     logger.info(f"Loading model from {checkpoint_path}")
 
-    # Create agent with same configuration as training
-    # These parameters should match the config used during training
+    # Create agent with configuration from the training run
     agent = PPOAgent(
-        observation_dim=OBS_DIM,
-        action_dim=ACTION_DIM,
-        hidden_dim=512,
-        d_model=256,
-        nhead=8,
-        num_layers=4,
-        dim_feedforward=1024,
-        dropout=0.1,
+        observation_dim=cfg.model.observation_dim,
+        action_dim=cfg.model.action_dim,
+        hidden_dim=cfg.model.hidden_dim,
+        d_model=cfg.model.d_model,
+        nhead=cfg.model.nhead,
+        num_layers=cfg.model.num_layers,
+        dim_feedforward=cfg.model.dim_feedforward,
+        dropout=cfg.model.dropout,
     ).to(device)
 
     # Load the checkpoint
@@ -97,175 +167,161 @@ def visualize_rollouts(
 
     logger.info(f"Generating {num_rollouts} rollout visualizations...")
 
+    # Create action function for BatchRunner
+    torch_action_fn = TorchActionFunction(agent, use_mask=True, device=device)
+
+    # Create batch runner for environment simulations
+    batch_runner = BatchRunner(init_seed=seed, act_fn=torch_action_fn)
+    # Run environments to get trajectory data
+    states = batch_runner.run_rollout_batch(num_rollouts)
+
+    # Calculate some statistics about this rollout
+    final_state = states[-1]
     for rollout_idx in range(num_rollouts):
-        logger.info(f"Creating visualization {rollout_idx + 1}/{num_rollouts}")
+        # Extract board from final observation
+        final_obs = final_state.observation[rollout_idx]  # Shape: (4, 4, 31)
+        # Convert from one-hot to board values
+        board_values = final_obs.argmax(axis=-1)  # Shape: (4, 4)
+        max_tile = (2**board_values).max()
+        num_moves = len(states) - 1  # Subtract initial state
 
-        # Create a custom simulation loop for this rollout
-        # This avoids the JAX/PyTorch interaction issues
-        rollout_seed = seed + rollout_idx * 1000
+        logger.info(
+            f"  Rollout {rollout_idx + 1}: {num_moves} moves, max tile: {max_tile}"
+        )
 
-        # Initialize environment
-        key = jax.random.key(seed=rollout_seed)
-        env = pgx.make("2048")
-
-        # Initialize single environment state
-        key, subkey = jax.random.split(key)
-        state = env.init(subkey)
-
-        states = []
-        step_count = 0
-        max_steps = 1000  # Safety limit
-
-        while not (state.terminated or state.truncated) and step_count < max_steps:
-            states.append(state)
-
-            # Get observation and legal action mask
-            obs = state.observation  # Shape: (4, 4, 31)
-            mask = state.legal_action_mask  # Shape: (4,)
-
-            # Convert to PyTorch and get action from agent
-            obs_reshaped = obs.reshape(
-                16, 31
-            )  # Shape: (16, 31) - board_size x observation_dim
-            obs_np = jax.device_get(obs_reshaped)
-            mask_np = jax.device_get(mask)
-
-            # Make a copy to ensure it's writable
-            obs_np = obs_np.copy()
-            mask_np = mask_np.copy()
-
-            # Convert to torch tensors
-            obs_tensor = (
-                torch.from_numpy(obs_np).float().unsqueeze(0).to(device)
-            )  # Shape: (1, 16, 31)
-            mask_tensor = (
-                torch.from_numpy(mask_np).float().unsqueeze(0).to(device)
-            )  # Shape: (1, 4)
-
-            # Get action from agent
-            with torch.no_grad():
-                action_logits, _ = agent.forward(obs_tensor, mask_tensor)
-
-                # Apply legal action mask
-                masked_logits = action_logits.clone()
-                masked_logits[0, mask_tensor[0] == 0] = float("-inf")
-
-                # Get the action with highest probability (greedy)
-                action_idx = torch.argmax(masked_logits, dim=-1)[0].cpu().numpy()
-
-            # Take step in environment
-            key, subkey = jax.random.split(key)
-            state = env.step(state, int(action_idx), subkey)
-            step_count += 1
-
-        # Add final state
-        if states:
-            states.append(state)
-
-            # Create SVG animation
-            output_path = os.path.join(
-                output_dir, f"ppo_agent_rollout_{rollout_idx + 1}.svg"
-            )
-            pgx.save_svg_animation(
-                states,
-                output_path,
-                frame_duration_seconds=0.8,
-            )
-
-            # Calculate some statistics about this rollout
-            final_state = state
-            # Extract board from final observation
-            final_obs = final_state.observation  # Shape: (4, 4, 31)
-            # Convert from one-hot to board values
-            board_values = final_obs.argmax(axis=-1)  # Shape: (4, 4)
-            max_tile = (2**board_values).max()
-            num_moves = len(states) - 1  # Subtract initial state
-
-            logger.info(
-                f"  Rollout {rollout_idx + 1}: {num_moves} moves, max tile: {max_tile}"
-            )
-            logger.info(f"  Saved visualization to: {output_path}")
-        else:
-            logger.warning(f"  Rollout {rollout_idx + 1}: No valid states collected")
-
-    logger.info(f"All visualizations saved to: {output_dir}/")
+    # Create SVG animation
+    output_path = os.path.join(output_dir, "ppo_agent_rollout.svg")
+    pgx.save_svg_animation(
+        states,
+        output_path,
+        frame_duration_seconds=0.8,
+    )
+    logger.info(f"  Saved visualization to: {output_path}")
 
 
-def find_latest_checkpoint(results_dir: str = "results") -> str:
+def find_latest_results_dir(results_root: str = "results") -> str:
     """
-    Find the most recent checkpoint file in the results directory.
+    Find the most recent results directory in the results root.
 
     Parameters
     ----------
-    results_dir : str
-        Results directory to search
+    results_root : str
+        Root results directory to search
 
     Returns
     -------
     str
-        Path to the latest checkpoint
+        Path to the latest results directory
     """
-    # Look for checkpoint files in the results directory
-    results_path = Path(results_dir)
+    results_path = Path(results_root)
 
-    # Find all .pt files
-    checkpoint_files = list(results_path.glob("**/*.pt"))
+    if not results_path.exists():
+        raise FileNotFoundError(f"Results directory {results_root} does not exist")
 
-    if not checkpoint_files:
-        raise FileNotFoundError(f"No checkpoint files (.pt) found in {results_dir}")
+    # Look for subdirectories that contain .hydra folders (indicating a training run)
+    run_dirs = []
+    for item in results_path.rglob(".hydra"):
+        if item.is_dir():
+            run_dirs.append(item.parent)
+
+    if not run_dirs:
+        raise FileNotFoundError(f"No training run directories found in {results_root}")
 
     # Sort by modification time and get the latest
-    latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
+    latest_dir = max(run_dirs, key=os.path.getmtime)
 
-    return str(latest_checkpoint)
+    return str(latest_dir)
 
 
 def main():
     """Main visualization function."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Visualize trained PPO agent playing 2048",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=str,
+        default=None,
+        help="Path to specific results directory. If not provided, will find the latest one.",
+    )
+    parser.add_argument(
+        "--results-root",
+        type=str,
+        default="results",
+        help="Root directory to search for results (used when --results-dir is not specified)",
+    )
+    parser.add_argument(
+        "--num-rollouts",
+        type=int,
+        default=4,
+        help="Number of rollout visualizations to create",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="visualizations",
+        help="Directory to save visualization files",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible visualizations",
+    )
+
+    args = parser.parse_args()
+
     logger.info("Starting PPO Agent Visualization")
 
     # Device setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Find the latest trained model
-    try:
-        checkpoint_path = find_latest_checkpoint()
-        logger.info(f"Found latest checkpoint: {checkpoint_path}")
-    except FileNotFoundError as e:
-        logger.error(f"Error finding checkpoint: {e}")
-        logger.error(
-            "Please ensure you have trained a model first by running train_ppo_agent.py"
-        )
-        return
+    # Determine results directory to use
+    if args.results_dir:
+        results_dir = args.results_dir
+        logger.info(f"Using specified results directory: {results_dir}")
+    else:
+        try:
+            results_dir = find_latest_results_dir(args.results_root)
+            logger.info(f"Found latest results directory: {results_dir}")
+        except FileNotFoundError as e:
+            logger.error(f"Error finding results directory: {e}")
+            logger.error(
+                "Please ensure you have trained a model first by running train_ppo_agent.py, "
+                "or specify a results directory with --results-dir"
+            )
+            return
 
     # Load the trained agent
     try:
-        agent = load_trained_agent(checkpoint_path, device)
+        agent = load_trained_agent(results_dir, device)
     except Exception as e:
         logger.error(f"Error loading model: {e}")
         return
 
-    # Create output directory for visualizations
-    output_dir = "visualizations"
-
     # Generate visualizations
     try:
         visualize_rollouts(
-            agent=agent, device=device, num_rollouts=4, output_dir=output_dir, seed=42
+            agent=agent,
+            device=device,
+            num_rollouts=args.num_rollouts,
+            output_dir=args.output_dir,
+            seed=args.seed,
         )
 
         logger.info(
             f"""
         ✅ Visualization complete! 
         
-        Check the '{output_dir}' directory for SVG animation files:
-        - ppo_agent_rollout_1.svg
-        - ppo_agent_rollout_2.svg  
-        - ppo_agent_rollout_3.svg
-        - ppo_agent_rollout_4.svg
-        
-        You can open these files in a web browser to see the agent playing 2048!
+        Check the '{args.output_dir}' directory for SVG animation file.
+        - ppo_agent_rollout.svg
+
+        You can open this file in a web browser to see the agent playing 2048!
+
+        Model loaded from: {results_dir}
         """
         )
 
