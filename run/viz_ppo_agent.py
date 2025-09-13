@@ -66,6 +66,7 @@ def load_hydra_config(results_dir: str) -> DictConfig:
 def find_checkpoint_in_dir(results_dir: str) -> str:
     """
     Find the checkpoint file in the specified results directory.
+    Prioritizes final_model.pt, then the highest numbered checkpoint_#.pt.
 
     Parameters
     ----------
@@ -79,16 +80,43 @@ def find_checkpoint_in_dir(results_dir: str) -> str:
     """
     results_path = Path(results_dir)
 
-    # Look for .pt files in the results directory
-    checkpoint_files = list(results_path.glob("*.pt"))
+    # First, check for final_model.pt
+    final_model_path = results_path / "final_model.pt"
+    if final_model_path.exists():
+        logger.info(f"Found final_model.pt, using: {final_model_path}")
+        return str(final_model_path)
 
-    if not checkpoint_files:
+    # Look for checkpoint_#.pt files
+    checkpoint_files = list(results_path.glob("checkpoint_*.pt"))
+
+    if checkpoint_files:
+        # Extract numbers from checkpoint files and sort by number (highest first)
+        def extract_checkpoint_number(filepath: Path) -> int:
+            try:
+                # Extract number from checkpoint_#.pt pattern
+                stem = filepath.stem  # gets "checkpoint_#"
+                return int(stem.split("_")[1])
+            except (IndexError, ValueError):
+                return -1  # fallback for malformed names
+
+        # Sort by checkpoint number in descending order
+        checkpoint_files.sort(key=extract_checkpoint_number, reverse=True)
+        selected_checkpoint = checkpoint_files[0]
+        logger.info(f"Using highest numbered checkpoint: {selected_checkpoint}")
+        return str(selected_checkpoint)
+
+    # Look for any other .pt files as fallback
+    other_pt_files = list(results_path.glob("*.pt"))
+
+    if not other_pt_files:
         raise FileNotFoundError(f"No checkpoint files (.pt) found in {results_dir}")
 
-    if len(checkpoint_files) > 1:
-        logger.warning(f"Multiple checkpoint files found, using: {checkpoint_files[0]}")
+    if len(other_pt_files) > 1:
+        logger.warning(
+            f"Multiple non-standard checkpoint files found, using: {other_pt_files[0]}"
+        )
 
-    return str(checkpoint_files[0])
+    return str(other_pt_files[0])
 
 
 def load_trained_agent(results_dir: str, device: torch.device) -> PPOAgent:
@@ -194,7 +222,7 @@ def visualize_rollouts(
     pgx.save_svg_animation(
         states,
         output_path,
-        frame_duration_seconds=0.8,
+        frame_duration_seconds=0.25,
     )
     logger.info(f"  Saved visualization to: {output_path}")
 
@@ -227,8 +255,10 @@ def find_latest_results_dir(results_root: str = "results") -> str:
     if not run_dirs:
         raise FileNotFoundError(f"No training run directories found in {results_root}")
 
-    # Sort by modification time and get the latest
-    latest_dir = max(run_dirs, key=os.path.getmtime)
+    # Sort by directory name timestamp and get the latest
+    # Directory names are expected to be in format: YYYY-MM-DD_HH-MM-SS
+    # This format is naturally sortable as strings
+    latest_dir = max(run_dirs, key=lambda path: path.name)
 
     return str(latest_dir)
 
