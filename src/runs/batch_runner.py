@@ -82,6 +82,8 @@ class BatchRunner:
             Array of observations from the environments. Shape (batch_size, num_steps, 16).
         actions : np.ndarray
             Array of actions taken in the environments. Shape (batch_size, num_steps).
+        action_masks : np.ndarray
+            Array of action masks from the environments. Shape (batch_size, num_steps, 4).
         log_probs : np.ndarray
             Array of log probabilities of the actions taken. Shape (batch_size, num_steps).
         values : np.ndarray
@@ -107,6 +109,7 @@ class BatchRunner:
         # Run the environment
         observations = []
         actions = []
+        action_masks = []
         log_probs = []
         values = []
         rewards = []
@@ -114,10 +117,11 @@ class BatchRunner:
         while not (state.terminated | state.truncated).all():
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
-            # Store the observation
+            # Store the observation and legal action mask
             observation = state.observation
+            legal_action_mask = state.legal_action_mask
             action, log_prob, value = self.act_fn(
-                subkey, observation, state.legal_action_mask
+                subkey, observation, legal_action_mask
             )
             self.key, subkey = jax.random.split(self.key)
             subkey = jax.random.split(subkey, batch_size)
@@ -125,6 +129,7 @@ class BatchRunner:
             # Store the observations, actions, rewards, and terminations
             observations.append(observation)
             actions.append(action)
+            action_masks.append(legal_action_mask)
             log_probs.append(log_prob)
             values.append(value)
             rewards.append(state.rewards)
@@ -132,12 +137,21 @@ class BatchRunner:
         # Convert lists to arrays
         observations = np.stack(observations, axis=1)
         actions = np.stack(actions, axis=1)
+        action_masks = np.stack(action_masks, axis=1)
         log_probs = np.stack(log_probs, axis=1)
         values = np.stack(values, axis=1)
         rewards = np.concatenate(rewards, axis=1)
         terminations = np.stack(terminations, axis=1)
 
-        return observations, actions, log_probs, values, rewards, terminations
+        return (
+            observations,
+            actions,
+            action_masks,
+            log_probs,
+            values,
+            rewards,
+            terminations,
+        )
 
     def run_rollout_batch(self, batch_size: int) -> list:
         """

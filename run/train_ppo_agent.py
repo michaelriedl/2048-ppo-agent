@@ -89,6 +89,7 @@ def main(cfg: DictConfig) -> Optional[float]:
         entropy_coef=cfg.trainer.entropy_coef,
         max_grad_norm=cfg.trainer.max_grad_norm,
         target_kl=cfg.trainer.target_kl,
+        use_action_mask=cfg.trainer.use_action_mask,
         device=device,
     )
 

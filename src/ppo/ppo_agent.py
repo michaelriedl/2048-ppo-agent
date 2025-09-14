@@ -114,6 +114,8 @@ class PPOAgent(nn.Module):
 
         # Apply action mask if provided
         if action_mask is not None:
+            # Convert action mask to float
+            action_mask = action_mask.float()
             # Set masked actions to very negative value
             action_logits = action_logits - (1e8 * (1 - action_mask))
 

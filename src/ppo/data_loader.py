@@ -42,6 +42,7 @@ class PPODataset(Dataset):
         # Convert numpy arrays to torch tensors
         self.observations = torch.from_numpy(buffer_data["observations"]).float()
         self.actions = torch.from_numpy(buffer_data["actions"]).float()
+        self.action_masks = torch.from_numpy(buffer_data["action_masks"]).bool()
         self.rewards = torch.from_numpy(buffer_data["rewards"]).float()
         self.values = torch.from_numpy(buffer_data["values"]).float()
         self.log_probs = torch.from_numpy(buffer_data["log_probs"]).float()
@@ -109,6 +110,7 @@ class PPODataset(Dataset):
         return {
             "observations": self.observations[idx],
             "actions": self.actions[idx],
+            "action_masks": self.action_masks[idx],
             "rewards": self.rewards[idx],
             "values": self.values[idx],
             "log_probs": self.log_probs[idx],

@@ -34,6 +34,7 @@ class PPOTrainer:
         entropy_coef: float = 0.01,
         max_grad_norm: float = 0.5,
         target_kl: float = 0.01,
+        use_action_mask: bool = False,
         device: torch.device = torch.device("cpu"),
     ):
         """
@@ -63,6 +64,8 @@ class PPOTrainer:
             Maximum gradient norm for clipping
         target_kl : float
             Target KL divergence for early stopping
+        use_action_mask : bool
+            Whether to use action masking
         device : torch.device
             Device to run on
         output_dir : str
@@ -80,6 +83,7 @@ class PPOTrainer:
         self.entropy_coef = entropy_coef
         self.max_grad_norm = max_grad_norm
         self.target_kl = target_kl
+        self.use_action_mask = use_action_mask
         self.device = device
 
         # Optimizer
@@ -112,7 +116,7 @@ class PPOTrainer:
 
         # Create action function for BatchRunner
         torch_action_fn = TorchActionFunction(
-            self.agent, use_mask=False, device=self.device
+            self.agent, use_mask=self.use_action_mask, device=self.device
         )
 
         # Set the action function in batch runner
@@ -123,9 +127,15 @@ class PPOTrainer:
         with torch.no_grad():
             for batch_idx in range(num_batches):
                 # Run environments to get trajectory data
-                observations, actions, log_probs, values, rewards, terminations = (
-                    self.batch_runner.run_actions_batch(batch_size)
-                )
+                (
+                    observations,
+                    actions,
+                    action_masks,
+                    log_probs,
+                    values,
+                    rewards,
+                    terminations,
+                ) = self.batch_runner.run_actions_batch(batch_size)
 
                 # Convert to torch tensors and move to device if needed
                 batch_size_actual, num_steps = observations.shape[:2]
@@ -142,6 +152,7 @@ class PPOTrainer:
                 self.rollout_buffer.store_batch(
                     observations=observations,
                     actions=actions_expanded,
+                    action_masks=action_masks,
                     rewards=rewards,
                     values=values,
                     log_probs=log_probs,
@@ -239,6 +250,7 @@ class PPOTrainer:
                 # Move batch to device
                 observations = batch["observations"].to(self.device)
                 actions = batch["actions"].to(self.device)
+                action_masks = batch["action_masks"].to(self.device)
                 old_log_probs = batch["log_probs"].to(self.device)
                 advantages = batch["advantages"].to(self.device)
                 returns = batch["returns"].to(self.device)
@@ -248,7 +260,9 @@ class PPOTrainer:
 
                 # Get current policy outputs
                 new_log_probs, values, entropy = self.agent.evaluate_actions(
-                    observations, action_indices
+                    observations,
+                    action_indices,
+                    action_mask=action_masks if self.use_action_mask else None,
                 )
 
                 # Calculate ratio (pi_theta / pi_theta_old)
