@@ -18,14 +18,20 @@ class TestPPODataset:
     def sample_buffer_data(self):
         """Create sample buffer data for testing."""
         buffer_size = 100
+        obs_length = 20
         obs_dim = 16
         action_dim = 4
 
         np.random.seed(42)
 
         return {
-            "observations": np.random.randn(buffer_size, obs_dim).astype(np.float32),
+            "observations": np.random.randn(buffer_size, obs_length, obs_dim).astype(
+                np.float32
+            ),
             "actions": np.random.randn(buffer_size, action_dim).astype(np.float32),
+            "action_masks": np.random.choice(
+                [True, False], (buffer_size, action_dim), p=[0.8, 0.2]
+            ),
             "rewards": np.random.randn(buffer_size).astype(np.float32),
             "values": np.random.randn(buffer_size).astype(np.float32),
             "log_probs": np.random.randn(buffer_size).astype(np.float32),
@@ -51,14 +57,16 @@ class TestPPODataset:
         # Check that tensors are created correctly
         assert isinstance(dataset.observations, torch.Tensor)
         assert isinstance(dataset.actions, torch.Tensor)
+        assert isinstance(dataset.action_masks, torch.Tensor)
         assert isinstance(dataset.rewards, torch.Tensor)
         assert isinstance(dataset.values, torch.Tensor)
         assert isinstance(dataset.log_probs, torch.Tensor)
         assert isinstance(dataset.terminations, torch.Tensor)
 
         # Check tensor shapes
-        assert dataset.observations.shape == (100, 16)
+        assert dataset.observations.shape == (100, 20, 16)
         assert dataset.actions.shape == (100, 4)
+        assert dataset.action_masks.shape == (100, 4)
         assert dataset.rewards.shape == (100,)
         assert dataset.values.shape == (100,)
         assert dataset.log_probs.shape == (100,)
@@ -90,6 +98,7 @@ class TestPPODataset:
         expected_keys = {
             "observations",
             "actions",
+            "action_masks",
             "rewards",
             "values",
             "log_probs",
@@ -104,8 +113,9 @@ class TestPPODataset:
             assert isinstance(value, torch.Tensor)
 
         # Check shapes for individual items
-        assert item["observations"].shape == (16,)
+        assert item["observations"].shape == (20, 16)
         assert item["actions"].shape == (4,)
+        assert item["action_masks"].shape == (4,)
         assert item["rewards"].shape == ()
         assert item["values"].shape == ()
         assert item["log_probs"].shape == ()
@@ -126,6 +136,26 @@ class TestPPODataset:
         # GAE computation should give different results with different parameters
         assert not torch.allclose(dataset1.advantages, dataset2.advantages)
         assert not torch.allclose(dataset1.returns, dataset2.returns)
+
+    def test_action_masks_handling(self, sample_buffer_data):
+        """Test that action masks are properly handled."""
+        dataset = PPODataset(
+            buffer_data=sample_buffer_data, gamma=0.99, lambda_gae=0.95
+        )
+
+        # Check that action masks are boolean tensors
+        assert dataset.action_masks.dtype == torch.bool
+        assert dataset.action_masks.shape == (100, 4)
+
+        # Check that action masks in individual items are boolean
+        item = dataset[0]
+        assert item["action_masks"].dtype == torch.bool
+        assert item["action_masks"].shape == (4,)
+
+        # Check that action masks contain both True and False values
+        # (with our random generation, this should be the case)
+        assert torch.any(dataset.action_masks)  # At least one True
+        assert not torch.all(dataset.action_masks)  # At least one False
 
 
 class TestFactoryFunction:
@@ -224,6 +254,7 @@ class TestFactoryFunction:
                 16,
             )  # observation_length, observation_dim
             assert batch["actions"].shape == (batch_size, 4)  # action dim
+            assert batch["action_masks"].shape == (batch_size, 4)  # action masks
             assert batch["rewards"].shape == (batch_size,)
             assert batch["values"].shape == (batch_size,)
             assert batch["log_probs"].shape == (batch_size,)
