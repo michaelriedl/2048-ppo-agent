@@ -28,6 +28,7 @@ class TestRolloutBuffer:
         # Check buffer shapes
         assert buffer.observation_buffer.shape == (100, 10, 16)
         assert buffer.action_buffer.shape == (100, 4)
+        assert buffer.action_mask_buffer.shape == (100, 4)
         assert buffer.reward_buffer.shape == (100,)
         assert buffer.value_buffer.shape == (100,)
         assert buffer.log_prob_buffer.shape == (100,)
@@ -42,6 +43,7 @@ class TestRolloutBuffer:
         # Fill buffers with some data
         buffer.observation_buffer.fill(1.0)
         buffer.action_buffer.fill(2.0)
+        buffer.action_mask_buffer.fill(True)
         buffer.reward_buffer.fill(3.0)
         buffer.buffer_size = 5
 
@@ -51,6 +53,7 @@ class TestRolloutBuffer:
         assert buffer.buffer_size == 0
         assert np.all(buffer.observation_buffer == 0)
         assert np.all(buffer.action_buffer == 0)
+        assert np.all(buffer.action_mask_buffer == 0)
         assert np.all(buffer.reward_buffer == 0)
         assert np.all(buffer.value_buffer == 0)
         assert np.all(buffer.log_prob_buffer == 0)
@@ -68,6 +71,9 @@ class TestRolloutBuffer:
 
         observations = np.random.randn(batch_size, time_steps, 5, 4).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        action_masks = (
+            np.random.rand(batch_size, time_steps, 2) > 0.5
+        )  # Random boolean masks
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -78,7 +84,13 @@ class TestRolloutBuffer:
         terminations[1, 4] = True
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Should store 4 steps from first env + 5 steps from second env = 9 total
@@ -88,6 +100,7 @@ class TestRolloutBuffer:
         data = buffer.get_buffer_data()
         assert data["observations"].shape == (9, 5, 4)
         assert data["actions"].shape == (9, 2)
+        assert data["action_masks"].shape == (9, 2)
         assert data["rewards"].shape == (9,)
         assert data["terminations"].shape == (9,)
 
@@ -102,13 +115,22 @@ class TestRolloutBuffer:
 
         observations = np.random.randn(batch_size, time_steps, 5, 4).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 2).astype(np.float32)
+        action_masks = (
+            np.random.rand(batch_size, time_steps, 2) > 0.5
+        )  # Random boolean masks
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
         terminations = np.zeros((batch_size, time_steps), dtype=bool)
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Should store 0 steps since no terminations
@@ -128,6 +150,9 @@ class TestRolloutBuffer:
 
         observations = np.random.randn(batch_size, time_steps, 3, 2).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 1).astype(np.float32)
+        action_masks = (
+            np.random.rand(batch_size, time_steps, 1) > 0.5
+        )  # Random boolean masks
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -137,7 +162,13 @@ class TestRolloutBuffer:
         terminations[0, 8] = True
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Should only store 5 steps (buffer capacity)
@@ -153,6 +184,7 @@ class TestRolloutBuffer:
         buffer.buffer_size = 5
         buffer.observation_buffer[:5] = np.ones((5, 4, 3))
         buffer.action_buffer[:5] = np.ones((5, 2)) * 2
+        buffer.action_mask_buffer[:5] = True
         buffer.reward_buffer[:5] = np.ones(5) * 3
         buffer.value_buffer[:5] = np.ones(5) * 4
         buffer.log_prob_buffer[:5] = np.ones(5) * 5
@@ -164,6 +196,7 @@ class TestRolloutBuffer:
         expected_keys = {
             "observations",
             "actions",
+            "action_masks",
             "rewards",
             "values",
             "log_probs",
@@ -173,9 +206,11 @@ class TestRolloutBuffer:
 
         assert data["observations"].shape == (5, 4, 3)
         assert data["actions"].shape == (5, 2)
+        assert data["action_masks"].shape == (5, 2)
         assert data["rewards"].shape == (5,)
         assert np.all(data["observations"] == 1)
         assert np.all(data["actions"] == 2)
+        assert np.all(data["action_masks"] == True)
         assert np.all(data["rewards"] == 3)
         assert np.all(data["values"] == 4)
         assert np.all(data["log_probs"] == 5)
@@ -193,6 +228,9 @@ class TestRolloutBuffer:
 
         observations1 = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions1 = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        action_masks1 = np.ones(
+            (batch_size, time_steps, 1), dtype=bool
+        )  # All valid actions
         rewards1 = np.ones((batch_size, time_steps), dtype=np.float32)
         values1 = np.ones((batch_size, time_steps), dtype=np.float32)
         log_probs1 = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -200,7 +238,13 @@ class TestRolloutBuffer:
         terminations1[0, 2] = True  # Terminate at step 2
 
         buffer.store_batch(
-            observations1, actions1, rewards1, values1, log_probs1, terminations1
+            observations1,
+            actions1,
+            action_masks1,
+            rewards1,
+            values1,
+            log_probs1,
+            terminations1,
         )
 
         assert buffer.buffer_size == 3
@@ -208,6 +252,9 @@ class TestRolloutBuffer:
         # Second batch
         observations2 = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32) * 2
         actions2 = np.ones((batch_size, time_steps, 1), dtype=np.float32) * 2
+        action_masks2 = np.zeros(
+            (batch_size, time_steps, 1), dtype=bool
+        )  # All invalid actions
         rewards2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
         values2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
         log_probs2 = np.ones((batch_size, time_steps), dtype=np.float32) * 2
@@ -215,7 +262,13 @@ class TestRolloutBuffer:
         terminations2[0, 1] = True  # Terminate at step 1
 
         buffer.store_batch(
-            observations2, actions2, rewards2, values2, log_probs2, terminations2
+            observations2,
+            actions2,
+            action_masks2,
+            rewards2,
+            values2,
+            log_probs2,
+            terminations2,
         )
 
         assert buffer.buffer_size == 5  # 3 + 2
@@ -225,10 +278,12 @@ class TestRolloutBuffer:
         # Check that first batch data is preserved
         assert np.all(data["observations"][:3] == 1)
         assert np.all(data["rewards"][:3] == 1)
+        assert np.all(data["action_masks"][:3] == True)
 
         # Check that second batch data is appended
         assert np.all(data["observations"][3:5] == 2)
         assert np.all(data["rewards"][3:5] == 2)
+        assert np.all(data["action_masks"][3:5] == False)
 
     def test_empty_batch_store(self):
         """Test storing empty batch (batch_size=0)."""
@@ -239,13 +294,20 @@ class TestRolloutBuffer:
         # Create empty batch
         observations = np.empty((0, 5, 5, 2), dtype=np.float32)
         actions = np.empty((0, 5, 1), dtype=np.float32)
+        action_masks = np.empty((0, 5, 1), dtype=bool)
         rewards = np.empty((0, 5), dtype=np.float32)
         values = np.empty((0, 5), dtype=np.float32)
         log_probs = np.empty((0, 5), dtype=np.float32)
         terminations = np.empty((0, 5), dtype=bool)
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Buffer should remain empty
@@ -262,6 +324,7 @@ class TestRolloutBuffer:
 
         observations = np.ones((batch_size, time_steps, 5, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        action_masks = np.ones((batch_size, time_steps, 1), dtype=bool)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
         log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -271,7 +334,13 @@ class TestRolloutBuffer:
         terminations[0, 0] = True
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Should store 1 step (the termination step)
@@ -288,6 +357,7 @@ class TestRolloutBuffer:
 
         observations = np.ones((batch_size, time_steps, 5, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        action_masks = np.ones((batch_size, time_steps, 1), dtype=bool)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
         log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -298,7 +368,13 @@ class TestRolloutBuffer:
         terminations[0, 4] = True
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Should store only up to first termination (3 steps: 0, 1, 2)
@@ -316,6 +392,7 @@ class TestRolloutBuffer:
         # Create data with specific dtypes
         observations = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        action_masks = np.ones((batch_size, time_steps, 1), dtype=bool)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
         log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -323,7 +400,13 @@ class TestRolloutBuffer:
         terminations[0, 2] = True
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         data = buffer.get_buffer_data()
@@ -331,6 +414,7 @@ class TestRolloutBuffer:
         # Check that dtypes are preserved
         assert data["observations"].dtype == np.float32
         assert data["actions"].dtype == np.float32
+        assert data["action_masks"].dtype == bool
         assert data["rewards"].dtype == np.float32
         assert data["values"].dtype == np.float32
         assert data["log_probs"].dtype == np.float32
@@ -353,6 +437,9 @@ class TestRolloutBuffer:
             np.float32
         )
         actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        action_masks = (
+            np.random.rand(batch_size, time_steps, 4) > 0.3
+        )  # 70% chance of valid action
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -366,7 +453,13 @@ class TestRolloutBuffer:
 
         # This should complete without error
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         # Verify some data was stored
@@ -374,7 +467,7 @@ class TestRolloutBuffer:
         assert buffer.buffer_size <= buffer.total_buffer_size
 
         data = buffer.get_buffer_data()
-        assert len(data) == 6  # All expected keys
+        assert len(data) == 7  # All expected keys
 
     def test_is_full_property(self):
         """Test that is_full property works correctly."""
@@ -403,6 +496,7 @@ class TestRolloutBuffer:
 
         observations = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
         actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
+        action_masks = np.ones((batch_size, time_steps, 1), dtype=bool)
         rewards = np.ones((batch_size, time_steps), dtype=np.float32)
         values = np.ones((batch_size, time_steps), dtype=np.float32)
         log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
@@ -412,7 +506,13 @@ class TestRolloutBuffer:
         terminations[0, 4] = True  # This will store 5 steps (0-4)
 
         buffer.store_batch(
-            observations, actions, rewards, values, log_probs, terminations
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
         )
 
         assert buffer.is_full
@@ -436,6 +536,7 @@ class TestRolloutBuffer:
         # Check buffer shapes - should be (50, 4, 4, 8)
         assert buffer.observation_buffer.shape == (50, 4, 4, 8)
         assert buffer.action_buffer.shape == (50, 2)
+        assert buffer.action_mask_buffer.shape == (50, 2)
         assert buffer.reward_buffer.shape == (50,)
         assert buffer.value_buffer.shape == (50,)
         assert buffer.log_prob_buffer.shape == (50,)
@@ -459,6 +560,7 @@ class TestRolloutBuffer:
         # Check buffer shapes - should be (30, 2, 3, 5, 4)
         assert buffer.observation_buffer.shape == (30, 2, 3, 5, 4)
         assert buffer.action_buffer.shape == (30, 3)
+        assert buffer.action_mask_buffer.shape == (30, 3)
         assert buffer.reward_buffer.shape == (30,)
         assert buffer.value_buffer.shape == (30,)
         assert buffer.log_prob_buffer.shape == (30,)
@@ -632,3 +734,89 @@ class TestRolloutBuffer:
         assert np.array_equal(
             result.reshape(batch_size, time_steps, -1), flattened_observations
         )
+
+    def test_action_mask_storage_and_retrieval(self):
+        """Test that action masks are stored and retrieved correctly."""
+        buffer = RolloutBuffer(
+            total_buffer_size=10,
+            observation_dim=2,
+            observation_length=3,
+            action_dim=4,
+        )
+
+        batch_size = 2
+        time_steps = 3
+
+        observations = np.random.randn(batch_size, time_steps, 3, 2).astype(np.float32)
+        actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
+        values = np.random.randn(batch_size, time_steps).astype(np.float32)
+        log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
+
+        # Create specific action mask patterns
+        action_masks = np.zeros((batch_size, time_steps, 4), dtype=bool)
+        action_masks[0, 0] = [True, False, True, False]  # First env, first step
+        action_masks[0, 1] = [False, True, False, True]  # First env, second step
+        action_masks[0, 2] = [True, True, False, False]  # First env, third step
+        action_masks[1, 0] = [False, False, True, True]  # Second env, first step
+        action_masks[1, 1] = [True, False, False, True]  # Second env, second step
+        action_masks[1, 2] = [False, True, True, False]  # Second env, third step
+
+        # Both environments terminate at step 2
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 2] = True
+        terminations[1, 2] = True
+
+        buffer.store_batch(
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
+        )
+
+        # Should store 3 steps from each environment = 6 total
+        assert buffer.buffer_size == 6
+
+        data = buffer.get_buffer_data()
+
+        # Verify action masks are stored correctly
+        expected_masks = np.array(
+            [
+                [True, False, True, False],  # First env, step 0
+                [False, True, False, True],  # First env, step 1
+                [True, True, False, False],  # First env, step 2
+                [False, False, True, True],  # Second env, step 0
+                [True, False, False, True],  # Second env, step 1
+                [False, True, True, False],  # Second env, step 2
+            ]
+        )
+
+        assert np.array_equal(data["action_masks"], expected_masks)
+        assert data["action_masks"].dtype == bool
+        assert data["action_masks"].shape == (6, 4)
+
+    def test_action_mask_buffer_initialization_and_reset(self):
+        """Test that action mask buffer is properly initialized and reset."""
+        buffer = RolloutBuffer(
+            total_buffer_size=5,
+            observation_dim=2,
+            observation_length=3,
+            action_dim=3,
+        )
+
+        # Check initial state
+        assert buffer.action_mask_buffer.shape == (5, 3)
+        assert buffer.action_mask_buffer.dtype == bool
+        assert np.all(buffer.action_mask_buffer == False)
+
+        # Manually modify buffer
+        buffer.action_mask_buffer[0] = [True, False, True]
+        buffer.action_mask_buffer[1] = [False, True, False]
+        assert not np.all(buffer.action_mask_buffer == False)
+
+        # Reset and verify
+        buffer.reset()
+        assert np.all(buffer.action_mask_buffer == False)

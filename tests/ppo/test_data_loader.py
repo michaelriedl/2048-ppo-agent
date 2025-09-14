@@ -150,6 +150,9 @@ class TestFactoryFunction:
             np.float32
         )
         actions = np.random.randn(batch_size, time_steps, 4).astype(np.float32)
+        action_masks = (
+            np.random.rand(batch_size, time_steps, 4) > 0.3
+        )  # Random action masks
         rewards = np.random.randn(batch_size, time_steps).astype(np.float32)
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
@@ -164,6 +167,7 @@ class TestFactoryFunction:
         buffer.store_batch(
             observations=observations,
             actions=actions,
+            action_masks=action_masks,
             rewards=rewards,
             values=values,
             log_probs=log_probs,

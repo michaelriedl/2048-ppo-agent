@@ -40,6 +40,7 @@ class RolloutBuffer:
         self.observation_buffer = np.zeros(obs_dim, dtype=np.float32)
         self.termination_buffer = np.zeros(total_buffer_size, dtype=bool)
         self.action_buffer = np.zeros((total_buffer_size, action_dim), dtype=np.float32)
+        self.action_mask_buffer = np.zeros((total_buffer_size, action_dim), dtype=bool)
         self.reward_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.value_buffer = np.zeros(total_buffer_size, dtype=np.float32)
         self.log_prob_buffer = np.zeros(total_buffer_size, dtype=np.float32)
@@ -54,6 +55,7 @@ class RolloutBuffer:
         self.observation_buffer.fill(0)
         self.termination_buffer.fill(0)
         self.action_buffer.fill(0)
+        self.action_mask_buffer.fill(0)
         self.reward_buffer.fill(0)
         self.value_buffer.fill(0)
         self.log_prob_buffer.fill(0)
@@ -138,6 +140,7 @@ class RolloutBuffer:
         self,
         observations: np.ndarray,
         actions: np.ndarray,
+        action_masks: np.ndarray,
         rewards: np.ndarray,
         values: np.ndarray,
         log_probs: np.ndarray,
@@ -152,6 +155,8 @@ class RolloutBuffer:
             The observations for the batch. Shape: (batch_size, time_steps, observation_dim)
         actions : np.ndarray
             The actions taken in the batch. Shape: (batch_size, time_steps, action_dim)
+        action_masks : np.ndarray
+            The action masks for the batch. Shape: (batch_size, time_steps, action_dim)
         rewards : np.ndarray
             The rewards received in the batch. Shape: (batch_size, time_steps)
         values : np.ndarray
@@ -190,6 +195,9 @@ class RolloutBuffer:
                 self.action_buffer[buffer_idx : buffer_idx + end_idx] = actions[
                     batch_idx, :end_idx
                 ]
+                self.action_mask_buffer[buffer_idx : buffer_idx + end_idx] = (
+                    action_masks[batch_idx, :end_idx]
+                )
                 self.reward_buffer[buffer_idx : buffer_idx + end_idx] = rewards[
                     batch_idx, :end_idx
                 ]
@@ -220,6 +228,7 @@ class RolloutBuffer:
         return {
             "observations": self.observation_buffer[: self.buffer_size],
             "actions": self.action_buffer[: self.buffer_size],
+            "action_masks": self.action_mask_buffer[: self.buffer_size],
             "rewards": self.reward_buffer[: self.buffer_size],
             "values": self.value_buffer[: self.buffer_size],
             "log_probs": self.log_prob_buffer[: self.buffer_size],
