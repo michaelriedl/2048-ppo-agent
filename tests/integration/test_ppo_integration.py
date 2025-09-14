@@ -186,9 +186,15 @@ class TestPPOIntegration:
 
         # Run environments
         batch_size = 3
-        observations, actions, log_probs, values, rewards, terminations = (
-            batch_runner.run_actions_batch(batch_size)
-        )
+        (
+            observations,
+            actions,
+            action_masks,
+            log_probs,
+            values,
+            rewards,
+            terminations,
+        ) = batch_runner.run_actions_batch(batch_size)
 
         # Verify the complete pipeline worked
         assert observations.shape[0] == batch_size
@@ -248,19 +254,20 @@ class TestPPOIntegration:
 
         # Run with same initial conditions
         batch_runner.act_fn = wrapper1
-        obs1, actions1, log_probs1, values1, rewards1, term1 = (
+        obs1, actions1, action_masks1, log_probs1, values1, rewards1, term1 = (
             batch_runner.run_actions_batch(2)
         )
 
         # Reset batch runner with same seed
         batch_runner.__init__(init_seed=42)
         batch_runner.act_fn = wrapper2
-        obs2, actions2, log_probs2, values2, rewards2, term2 = (
+        obs2, actions2, action_masks2, log_probs2, values2, rewards2, term2 = (
             batch_runner.run_actions_batch(2)
         )
 
         # Results should be identical (within numerical precision)
         np.testing.assert_array_equal(actions1, actions2)
+        np.testing.assert_array_equal(action_masks1, action_masks2)
         np.testing.assert_array_equal(term1, term2)
         np.testing.assert_allclose(obs1, obs2, rtol=1e-6)
         np.testing.assert_allclose(log_probs1, log_probs2, rtol=1e-6)
@@ -280,9 +287,15 @@ class TestPPOIntegration:
             batch_runner.__init__(init_seed=42)
             batch_runner.act_fn = torch_action_fn
 
-            observations, actions, log_probs, values, rewards, terminations = (
-                batch_runner.run_actions_batch(batch_size)
-            )
+            (
+                observations,
+                actions,
+                action_masks,
+                log_probs,
+                values,
+                rewards,
+                terminations,
+            ) = batch_runner.run_actions_batch(batch_size)
 
             # Verify correct batch size
             assert observations.shape[0] == batch_size
@@ -334,7 +347,7 @@ class TestPPOIntegration:
             batch_runner.__init__(init_seed=np.random.randint(0, 1000))
             batch_runner.act_fn = torch_action_fn
 
-            _, actions, _, _, _, _ = batch_runner.run_actions_batch(4)
+            _, actions, _, _, _, _, _ = batch_runner.run_actions_batch(4)
             all_actions.extend(actions.flatten())
 
         # Convert to numpy array
@@ -360,9 +373,15 @@ class TestPPOIntegration:
         batch_runner.act_fn = torch_action_fn
 
         # Run integration test
-        observations, actions, log_probs, values, rewards, terminations = (
-            batch_runner.run_actions_batch(2)
-        )
+        (
+            observations,
+            actions,
+            action_masks,
+            log_probs,
+            values,
+            rewards,
+            terminations,
+        ) = batch_runner.run_actions_batch(2)
 
         # Verify successful execution
         assert observations.shape[0] == 2
