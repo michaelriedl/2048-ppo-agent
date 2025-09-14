@@ -7,6 +7,7 @@ value_loss_coef: 0.5
 entropy_coef: 0.01
 max_grad_norm: 0.5
 target_kl: 0.015
+use_action_mask: true  # Whether to use action masking
 
 # Training loop parameters
 total_timesteps: 100000000

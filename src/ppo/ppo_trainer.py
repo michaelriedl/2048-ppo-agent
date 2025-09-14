@@ -34,6 +34,7 @@ class PPOTrainer:
         entropy_coef: float = 0.01,
         max_grad_norm: float = 0.5,
         target_kl: float = 0.01,
+        use_action_mask: bool = False,
         device: torch.device = torch.device("cpu"),
     ):
         """
@@ -63,6 +64,8 @@ class PPOTrainer:
             Maximum gradient norm for clipping
         target_kl : float
             Target KL divergence for early stopping
+        use_action_mask : bool
+            Whether to use action masking
         device : torch.device
             Device to run on
         output_dir : str
@@ -80,6 +83,7 @@ class PPOTrainer:
         self.entropy_coef = entropy_coef
         self.max_grad_norm = max_grad_norm
         self.target_kl = target_kl
+        self.use_action_mask = use_action_mask
         self.device = device
 
         # Optimizer
