@@ -110,13 +110,20 @@ class TestPPOIntegration:
 
         # Run a small batch
         batch_size = 2
-        observations, actions, log_probs, values, rewards, terminations = (
-            batch_runner.run_actions_batch(batch_size)
-        )
+        (
+            observations,
+            actions,
+            action_masks,
+            log_probs,
+            values,
+            rewards,
+            terminations,
+        ) = batch_runner.run_actions_batch(batch_size)
 
         # Verify outputs have correct shapes and types
         assert isinstance(observations, np.ndarray)
         assert isinstance(actions, np.ndarray)
+        assert isinstance(action_masks, np.ndarray)
         assert isinstance(log_probs, np.ndarray)
         assert isinstance(values, np.ndarray)
         assert isinstance(rewards, np.ndarray)
@@ -125,6 +132,7 @@ class TestPPOIntegration:
         # Check shapes
         assert observations.shape[0] == batch_size  # Batch dimension
         assert actions.shape[0] == batch_size
+        assert action_masks.shape[0] == batch_size
         assert log_probs.shape[0] == batch_size
         assert values.shape[0] == batch_size
         assert rewards.shape[0] == batch_size
