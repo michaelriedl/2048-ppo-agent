@@ -196,7 +196,9 @@ def visualize_rollouts(
     logger.info(f"Generating {num_rollouts} rollout visualizations...")
 
     # Create action function for BatchRunner
-    torch_action_fn = TorchActionFunction(agent, use_mask=True, device=device)
+    torch_action_fn = TorchActionFunction(
+        agent, use_mask=True, sample_actions=False, device=device
+    )
 
     # Create batch runner for environment simulations
     batch_runner = BatchRunner(init_seed=seed, act_fn=torch_action_fn)

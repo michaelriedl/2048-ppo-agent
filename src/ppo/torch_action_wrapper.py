@@ -16,6 +16,7 @@ class TorchActionFunction:
         self,
         agent: PPOAgent,
         use_mask: bool = False,
+        sample_actions: bool = True,
         device: torch.device = torch.device("cpu"),
     ):
         """
@@ -27,11 +28,14 @@ class TorchActionFunction:
             The trained PPO agent
         use_mask : bool
             Whether to use action masking
+        sample_actions : bool
+            Whether to sample actions from the policy or take the argmax
         device : torch.device
             Device to run inference on
         """
         self.agent = t2j(agent.to(device).eval())
         self.use_mask = use_mask
+        self.sample_actions = sample_actions
         # Store the agent parameters as a dictionary of JAX arrays
         self._agent_params = {k: t2j(v) for k, v in agent.named_parameters()}
         # Add the named buffers
@@ -82,8 +86,14 @@ class TorchActionFunction:
             )
             action_logits = action_logits.squeeze()
 
-            # Sample action and compute log probability
-            action = jax.random.categorical(rng_key, logits=action_logits)
+            if self.sample_actions:
+                # Sample action from categorical distribution
+                action = jax.random.categorical(rng_key, logits=action_logits)
+            else:
+                # Take argmax action
+                action = jnp.argmax(action_logits)
+
+            # Compute log probability
             log_prob = action_logits[action] - jax.scipy.special.logsumexp(
                 action_logits
             )
