@@ -400,3 +400,199 @@ class TestPPOIntegration:
 
         with pytest.raises((ValueError, RuntimeError)):
             batch_runner.run_actions_batch(0)  # Invalid batch size
+
+    def test_sample_actions_parameter_integration(self, agent, batch_runner):
+        """Test integration of the sample_actions parameter in TorchActionFunction."""
+        # Create two wrappers: one with sampling, one with argmax
+        wrapper_sampling = TorchActionFunction(
+            agent, use_mask=True, sample_actions=True, device=torch.device("cpu")
+        )
+        wrapper_argmax = TorchActionFunction(
+            agent, use_mask=True, sample_actions=False, device=torch.device("cpu")
+        )
+
+        # Test with identical inputs
+        rng_key = jax.random.key(42)
+        obs = jax.random.uniform(rng_key, (4, 4, 31))
+        mask = jax.numpy.ones((4,))
+
+        # Get actions from both wrappers multiple times
+        sampling_actions = []
+        argmax_actions = []
+
+        for i in range(10):
+            key = jax.random.key(i)
+
+            # Sampling wrapper
+            action_sample, log_prob_sample, value_sample = wrapper_sampling(
+                key, obs, mask
+            )
+            sampling_actions.append(int(action_sample))
+
+            # Argmax wrapper
+            action_argmax, log_prob_argmax, value_argmax = wrapper_argmax(
+                key, obs, mask
+            )
+            argmax_actions.append(int(action_argmax))
+
+        # Argmax wrapper should always return the same action (deterministic)
+        assert len(set(argmax_actions)) == 1, "Argmax wrapper should be deterministic"
+
+        # Sampling wrapper might show variety (though not guaranteed with small sample)
+        # At minimum, both should return valid actions
+        assert all(0 <= action < 4 for action in sampling_actions)
+        assert all(0 <= action < 4 for action in argmax_actions)
+
+    def test_sample_actions_with_batch_runner_integration(self, agent, batch_runner):
+        """Test sample_actions parameter integration with BatchRunner."""
+        # Test with sampling enabled
+        wrapper_sampling = TorchActionFunction(
+            agent, use_mask=True, sample_actions=True, device=torch.device("cpu")
+        )
+        batch_runner.act_fn = wrapper_sampling
+
+        obs1, actions1, masks1, log_probs1, values1, rewards1, term1 = (
+            batch_runner.run_actions_batch(3)
+        )
+
+        # Reset and test with argmax
+        batch_runner.__init__(init_seed=42)  # Same seed for comparison
+        wrapper_argmax = TorchActionFunction(
+            agent, use_mask=True, sample_actions=False, device=torch.device("cpu")
+        )
+        batch_runner.act_fn = wrapper_argmax
+
+        obs2, actions2, masks2, log_probs2, values2, rewards2, term2 = (
+            batch_runner.run_actions_batch(3)
+        )
+
+        # Both should produce valid results with correct batch size
+        assert obs1.shape[0] == 3  # Batch size
+        assert obs2.shape[0] == 3  # Batch size
+        assert actions1.shape[0] == 3
+        assert actions2.shape[0] == 3
+        assert masks1.shape[0] == 3
+        assert masks2.shape[0] == 3
+        assert log_probs1.shape[0] == 3
+        assert log_probs2.shape[0] == 3
+        assert values1.shape[0] == 3
+        assert values2.shape[0] == 3
+        assert rewards1.shape[0] == 3
+        assert rewards2.shape[0] == 3
+        assert term1.shape[0] == 3
+        assert term2.shape[0] == 3
+
+        # Both should have proper observation shape (batch, steps, 4, 4, 31)
+        assert obs1.shape[2:] == (4, 4, 31)
+        assert obs2.shape[2:] == (4, 4, 31)
+
+        # All actions should be valid
+        assert np.all((actions1 >= 0) & (actions1 < 4))
+        assert np.all((actions2 >= 0) & (actions2 < 4))
+
+        # All episodes should terminate
+        assert np.all(term1[:, -1])
+        assert np.all(term2[:, -1])
+
+        # Values should be finite
+        assert np.all(np.isfinite(values1))
+        assert np.all(np.isfinite(values2))
+
+        # Log probabilities should be finite
+        assert np.all(np.isfinite(log_probs1))
+        assert np.all(np.isfinite(log_probs2))
+
+        # Both should have at least one step per episode
+        assert obs1.shape[1] > 0
+        assert obs2.shape[1] > 0
+
+    def test_sample_actions_determinism_with_masks(self, agent):
+        """Test that sample_actions parameter respects action masks correctly."""
+        # Create wrappers
+        wrapper_sampling = TorchActionFunction(
+            agent, use_mask=True, sample_actions=True, device=torch.device("cpu")
+        )
+        wrapper_argmax = TorchActionFunction(
+            agent, use_mask=True, sample_actions=False, device=torch.device("cpu")
+        )
+
+        rng_key = jax.random.key(123)
+        obs = jax.random.uniform(rng_key, (4, 4, 31))
+
+        # Test with restricted action space (only action 2 is legal)
+        mask = jax.numpy.array([0.0, 0.0, 1.0, 0.0])
+
+        # Test sampling wrapper multiple times
+        sampling_actions = []
+        for i in range(10):
+            key = jax.random.key(i)
+            action, log_prob, value = wrapper_sampling(key, obs, mask)
+            sampling_actions.append(int(action))
+
+            # All outputs should be valid
+            assert isinstance(action, jax.Array)
+            assert isinstance(log_prob, jax.Array)
+            assert isinstance(value, jax.Array)
+            assert jnp.isfinite(log_prob)
+            assert jnp.isfinite(value)
+
+        # Test argmax wrapper multiple times
+        argmax_actions = []
+        for i in range(10):
+            key = jax.random.key(i)
+            action, log_prob, value = wrapper_argmax(key, obs, mask)
+            argmax_actions.append(int(action))
+
+            # All outputs should be valid
+            assert isinstance(action, jax.Array)
+            assert isinstance(log_prob, jax.Array)
+            assert isinstance(value, jax.Array)
+            assert jnp.isfinite(log_prob)
+            assert jnp.isfinite(value)
+
+        # Both wrappers should only select the legal action (action 2)
+        assert all(action == 2 for action in sampling_actions)
+        assert all(action == 2 for action in argmax_actions)
+
+    def test_sample_actions_jit_compatibility(self, agent):
+        """Test that both sample_actions modes are JIT compatible."""
+        # Create wrappers
+        wrapper_sampling = TorchActionFunction(
+            agent, use_mask=True, sample_actions=True, device=torch.device("cpu")
+        )
+        wrapper_argmax = TorchActionFunction(
+            agent, use_mask=True, sample_actions=False, device=torch.device("cpu")
+        )
+
+        # JIT compile both
+        jitted_sampling = jax.jit(wrapper_sampling)
+        jitted_argmax = jax.jit(wrapper_argmax)
+
+        # Test inputs
+        rng_key = jax.random.key(456)
+        obs = jax.random.uniform(rng_key, (4, 4, 31))
+        mask = jax.numpy.ones((4,))
+
+        # Test jitted sampling wrapper
+        action1, log_prob1, value1 = jitted_sampling(rng_key, obs, mask)
+        assert isinstance(action1, jax.Array)
+        assert isinstance(log_prob1, jax.Array)
+        assert isinstance(value1, jax.Array)
+        assert action1.shape == ()
+        assert log_prob1.shape == ()
+        assert value1.shape == ()
+        assert 0 <= action1 < 4
+        assert jnp.isfinite(log_prob1)
+        assert jnp.isfinite(value1)
+
+        # Test jitted argmax wrapper
+        action2, log_prob2, value2 = jitted_argmax(rng_key, obs, mask)
+        assert isinstance(action2, jax.Array)
+        assert isinstance(log_prob2, jax.Array)
+        assert isinstance(value2, jax.Array)
+        assert action2.shape == ()
+        assert log_prob2.shape == ()
+        assert value2.shape == ()
+        assert 0 <= action2 < 4
+        assert jnp.isfinite(log_prob2)
+        assert jnp.isfinite(value2)
