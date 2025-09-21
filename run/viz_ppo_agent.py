@@ -306,7 +306,7 @@ def generate_rollout_statistics(
     tile_counts = Counter(max_tiles)
 
     # Define common tile values to show (powers of 2)
-    common_tiles = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+    common_tiles = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
 
     # Calculate percentages for each tile value
     tile_percentages = {}
@@ -379,6 +379,9 @@ def generate_rollout_statistics(
     )
     logger.info(
         f"  Episodes reaching 1024+: {sum(1 for t in max_tiles if t >= 1024)} ({(sum(1 for t in max_tiles if t >= 1024) / num_rollouts_stats * 100):.1f}%)"
+    )
+    logger.info(
+        f"  Episodes reaching 512+: {sum(1 for t in max_tiles if t >= 512)} ({(sum(1 for t in max_tiles if t >= 512) / num_rollouts_stats * 100):.1f}%)"
     )
 
     plt.close()  # Close the plot to free memory
