@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from typing import Optional
 
@@ -95,6 +96,22 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     logger.info("Starting training loop")
 
+    # Load checkpoint if specified
+    if cfg.trainer.get("resume_from_checkpoint") is not None:
+        checkpoint_path = cfg.trainer.resume_from_checkpoint
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+
+        logger.info(f"Loading checkpoint from: {checkpoint_path}")
+        try:
+            trainer.load_checkpoint(checkpoint_path)
+            logger.info(
+                f"Resumed from checkpoint with {trainer.total_timesteps} timesteps already completed"
+            )
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            raise
+
     # Train the agent
     trainer.train(
         total_timesteps=cfg.trainer.total_timesteps,
@@ -103,6 +120,7 @@ def main(cfg: DictConfig) -> Optional[float]:
         update_epochs=cfg.trainer.update_epochs,
         train_batch_size=cfg.trainer.train_batch_size,
         save_freq=cfg.trainer.save_freq,
+        resume_extend_steps=cfg.trainer.resume_extend_steps,
     )
 
     # Return final performance metric
