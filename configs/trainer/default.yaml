@@ -9,6 +9,10 @@ max_grad_norm: 0.5
 target_kl: 0.015
 use_action_mask: true  # Whether to use action masking
 
+# Resume training configuration
+resume_from_checkpoint: null  # Path to checkpoint to resume from (null = start fresh)
+resume_extend_steps: true  # If true, extend training by total_timesteps; if false, train until total_timesteps
+
 # Training loop parameters
 total_timesteps: 100000000
 rollout_batch_size: 512  # Parallel environments
