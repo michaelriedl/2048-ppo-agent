@@ -98,6 +98,9 @@ class PPOTrainer:
         self.episode_lengths = []
         self.last_save_timestep = 0
 
+        # Track loading of checkpoints
+        self.load_checkpoint_path = None
+
     def collect_rollouts(self, batch_size: int, num_batches: int) -> None:
         """
         Collect rollout data using the current policy.
@@ -375,6 +378,8 @@ class PPOTrainer:
         filename : str
             Filename of the checkpoint
         """
+        # Store the checkpoint path
+        self.load_checkpoint_path = filename
         try:
             checkpoint = torch.load(filename, map_location=self.device)
             logger.info(f"Loading checkpoint from {filename}")
@@ -459,15 +464,19 @@ class PPOTrainer:
         """
         # Calculate target timesteps based on resume mode
         starting_timesteps = self.total_timesteps
+        if self.load_checkpoint_path is not None:
+            starting_text = "Resuming"
+        else:
+            starting_text = "Starting"
         if resume_extend_steps:
             target_timesteps = starting_timesteps + total_timesteps
             logger.info(
-                f"Resuming training from {starting_timesteps} timesteps, extending by {total_timesteps} to reach {target_timesteps}"
+                f"{starting_text} training from {starting_timesteps} timesteps, extending by {total_timesteps} to reach {target_timesteps}"
             )
         else:
             target_timesteps = total_timesteps
             logger.info(
-                f"Resuming training from {starting_timesteps} timesteps to reach {target_timesteps}"
+                f"{starting_text} training from {starting_timesteps} timesteps to reach {target_timesteps}"
             )
 
         if starting_timesteps >= target_timesteps:
