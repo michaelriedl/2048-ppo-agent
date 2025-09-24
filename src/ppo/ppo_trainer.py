@@ -98,6 +98,9 @@ class PPOTrainer:
         self.episode_lengths = []
         self.last_save_timestep = 0
 
+        # Track loading of checkpoints
+        self.load_checkpoint_path = None
+
     def collect_rollouts(self, batch_size: int, num_batches: int) -> None:
         """
         Collect rollout data using the current policy.
@@ -362,7 +365,9 @@ class PPOTrainer:
         }
 
         torch.save(checkpoint, filename)
-        logger.info(f"Checkpoint saved to {filename}")
+        logger.info(
+            f"Checkpoint saved to {filename} (timesteps: {self.total_timesteps})"
+        )
 
     def load_checkpoint(self, filename: str) -> None:
         """
@@ -373,16 +378,58 @@ class PPOTrainer:
         filename : str
             Filename of the checkpoint
         """
-        checkpoint = torch.load(filename, map_location=self.device)
+        # Store the checkpoint path
+        self.load_checkpoint_path = filename
+        try:
+            checkpoint = torch.load(filename, map_location=self.device)
+            logger.info(f"Loading checkpoint from {filename}")
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint from {filename}: {e}")
+            raise
 
-        self.agent.load_state_dict(checkpoint["agent_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        # Validate checkpoint contents
+        required_keys = ["agent_state_dict", "optimizer_state_dict"]
+        missing_keys = [key for key in required_keys if key not in checkpoint]
+        if missing_keys:
+            raise ValueError(f"Checkpoint missing required keys: {missing_keys}")
+
+        # Load agent state
+        try:
+            self.agent.load_state_dict(checkpoint["agent_state_dict"])
+            logger.info("Successfully loaded agent state")
+        except Exception as e:
+            logger.error(f"Failed to load agent state: {e}")
+            raise
+
+        # Load optimizer state
+        try:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            logger.info("Successfully loaded optimizer state")
+        except Exception as e:
+            logger.warning(
+                f"Failed to load optimizer state: {e}. Training will continue with fresh optimizer state."
+            )
+
+        # Load training statistics
         self.total_timesteps = checkpoint.get("total_timesteps", 0)
         self.episode_rewards = checkpoint.get("episode_rewards", [])
         self.episode_lengths = checkpoint.get("episode_lengths", [])
         self.last_save_timestep = checkpoint.get("last_save_timestep", 0)
 
-        logger.info(f"Checkpoint loaded from {filename}")
+        logger.info(f"Checkpoint loaded successfully:")
+        logger.info(f"  - Total timesteps: {self.total_timesteps}")
+        logger.info(
+            f"  - Episode rewards history: {len(self.episode_rewards)} episodes"
+        )
+        logger.info(
+            f"  - Episode lengths history: {len(self.episode_lengths)} episodes"
+        )
+
+        if self.episode_rewards:
+            recent_reward = np.mean(
+                self.episode_rewards[-min(100, len(self.episode_rewards)) :]
+            )
+            logger.info(f"  - Recent mean reward: {recent_reward:.2f}")
 
     def train(
         self,
@@ -392,6 +439,7 @@ class PPOTrainer:
         update_epochs: int = 4,
         train_batch_size: int = 64,
         save_freq: int = 10000,
+        resume_extend_steps: bool = True,
     ) -> None:
         """
         Main training loop.
@@ -410,12 +458,40 @@ class PPOTrainer:
             Minibatch size for policy updates
         save_freq : int
             Frequency to save checkpoints
+        resume_extend_steps : bool
+            If True, extend training by total_timesteps from current state.
+            If False, train until total_timesteps from start.
         """
-        logger.info(f"Starting PPO training for {total_timesteps} timesteps")
+        # Calculate target timesteps based on resume mode
+        starting_timesteps = self.total_timesteps
+        if self.load_checkpoint_path is not None:
+            starting_text = "Resuming"
+        else:
+            starting_text = "Starting"
+        if resume_extend_steps:
+            target_timesteps = starting_timesteps + total_timesteps
+            logger.info(
+                f"{starting_text} training from {starting_timesteps} timesteps, extending by {total_timesteps} to reach {target_timesteps}"
+            )
+        else:
+            target_timesteps = total_timesteps
+            logger.info(
+                f"{starting_text} training from {starting_timesteps} timesteps to reach {target_timesteps}"
+            )
+
+        if starting_timesteps >= target_timesteps:
+            logger.warning(
+                f"Already trained for {starting_timesteps} timesteps, target is {target_timesteps}. No training needed."
+            )
+            return
+
+        logger.info(
+            f"Starting PPO training for {target_timesteps - starting_timesteps} timesteps"
+        )
 
         iteration = 0
 
-        while self.total_timesteps < total_timesteps:
+        while self.total_timesteps < target_timesteps:
             iteration += 1
 
             # Collect rollouts
@@ -428,7 +504,9 @@ class PPOTrainer:
             )
 
             # Log metrics
-            logger.info(f"Iteration {iteration}, Timesteps: {self.total_timesteps}")
+            logger.info(
+                f"Iteration {iteration}, Timesteps: {self.total_timesteps}/{target_timesteps}"
+            )
             if metrics:
                 logger.info(
                     f"Policy Loss: {metrics['policy_loss']:.4f}, "
