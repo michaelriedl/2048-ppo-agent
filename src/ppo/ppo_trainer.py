@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
+from ..optim import configure_bert_optimizers
 from ..runs.batch_runner import BatchRunner
 from .data_loader import create_ppo_dataloader
 from .ppo_agent import PPOAgent
@@ -26,7 +27,8 @@ class PPOTrainer:
         agent: PPOAgent,
         batch_runner: BatchRunner,
         rollout_buffer: RolloutBuffer,
-        learning_rate: float = 3e-4,
+        optimizer_param_dict: Dict,
+        max_steps: int,
         gamma: float = 0.99,
         lambda_gae: float = 0.95,
         clip_epsilon: float = 0.2,
@@ -87,7 +89,11 @@ class PPOTrainer:
         self.device = device
 
         # Optimizer
-        self.optimizer = optim.Adam(self.agent.parameters(), lr=learning_rate)
+        opt_dict = configure_bert_optimizers(
+            self.agent, steps=max_steps, **optimizer_param_dict
+        )
+        self.optimizer = opt_dict["optimizer"]
+        self.lr_scheduler = opt_dict["lr_scheduler"]
 
         # Logging
         self.writer = SummaryWriter("logs")
