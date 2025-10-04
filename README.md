@@ -104,3 +104,4 @@ Below are some references that were helpful in the development of this project:
 3. [PPO-PyTorch](https://github.com/nikhilbarhate99/PPO-PyTorch)
 4. [torch2jax](https://github.com/samuela/torch2jax)
 5. [Pgx](https://github.com/sotetsuk/pgx)
+6. [PPO-Transformer](https://github.com/datvodinh/ppo-transformer)
