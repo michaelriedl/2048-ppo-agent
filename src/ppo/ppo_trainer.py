@@ -47,31 +47,31 @@ class PPOTrainer:
         agent : PPOAgent
             The PPO agent to train
         batch_runner : BatchRunner
-            Environment batch runner
+            Environment batch runner for parallel environment execution
         rollout_buffer : RolloutBuffer
-            Buffer for storing rollout data
-        learning_rate : float
-            Learning rate for optimizer
-        gamma : float
-            Discount factor
-        lambda_gae : float
-            GAE lambda parameter
-        clip_epsilon : float
-            PPO clipping parameter
-        value_loss_coef : float
-            Value loss coefficient
-        entropy_coef : float
-            Entropy coefficient
-        max_grad_norm : float
-            Maximum gradient norm for clipping
-        target_kl : float
-            Target KL divergence for early stopping
-        use_action_mask : bool
-            Whether to use action masking
-        device : torch.device
-            Device to run on
-        output_dir : str
-            Output directory for logs and checkpoints
+            Buffer for storing rollout data during training
+        optimizer_param_dict : Dict
+            Dictionary containing optimizer configuration parameters
+        max_steps : int
+            Maximum number of training steps for learning rate scheduling
+        gamma : float, default=0.99
+            Discount factor for future rewards
+        lambda_gae : float, default=0.95
+            GAE (Generalized Advantage Estimation) lambda parameter
+        clip_epsilon : float, default=0.2
+            PPO clipping parameter for policy loss
+        value_loss_coef : float, default=0.5
+            Coefficient for value function loss in total loss
+        entropy_coef : float, default=0.01
+            Coefficient for entropy bonus in total loss
+        max_grad_norm : float, default=0.5
+            Maximum gradient norm for gradient clipping
+        target_kl : float, default=0.01
+            Target KL divergence for early stopping during policy updates
+        use_action_mask : bool, default=False
+            Whether to use action masking for invalid actions
+        device : torch.device, default=torch.device("cpu")
+            Device to run training on (CPU or CUDA)
         """
         self.agent = agent.to(device)
         self.batch_runner = batch_runner
@@ -93,7 +93,7 @@ class PPOTrainer:
             self.agent, steps=max_steps, **optimizer_param_dict
         )
         self.optimizer = opt_dict["optimizer"]
-        self.lr_scheduler = opt_dict["lr_scheduler"]
+        self.lr_scheduler = opt_dict["lr_scheduler"]["scheduler"]
 
         # Logging
         self.writer = SummaryWriter("logs")
@@ -307,7 +307,9 @@ class PPOTrainer:
                     self.agent.parameters(), self.max_grad_norm
                 )
 
+                # Step optimizer and scheduler
                 self.optimizer.step()
+                self.lr_scheduler.step()
 
                 # Update metrics
                 total_policy_loss += policy_loss.mean().item()
@@ -343,6 +345,12 @@ class PPOTrainer:
         # Log metrics
         for key, value in metrics.items():
             self.writer.add_scalar(f"train/{key}", value, self.total_timesteps)
+
+        # Log learning rate
+        if self.lr_scheduler is not None:
+            self.writer.add_scalar(
+                "train/lr", self.lr_scheduler.get_last_lr()[0], self.total_timesteps
+            )
 
         # Log the distribution of the magnitude of the model parameters
         for name, param in self.agent.named_parameters():
