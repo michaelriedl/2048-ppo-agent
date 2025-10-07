@@ -57,7 +57,7 @@ class PPOAgent(nn.Module):
         self.reduction = reduction
 
         # Input embedding layer
-        self.input_embedding = nn.Linear(observation_dim, d_model)
+        self.input_embedding = nn.Linear(observation_dim, d_model, bias=False)
 
         # Transformer encoder
         self.transformer = TransformerEncoder(
@@ -71,19 +71,15 @@ class PPOAgent(nn.Module):
         # Actor head (policy)
         self.actor = nn.Sequential(
             nn.Linear(d_model, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, action_dim, bias=False),
         )
 
         # Critic head (value function)
         self.critic = nn.Sequential(
             nn.Linear(d_model, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1, bias=False),
         )
 
     def forward(

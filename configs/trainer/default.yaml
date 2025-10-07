@@ -18,7 +18,7 @@ optim:
   weight_decay: 0.01
   warmup_steps_ratio: 0.025
   scheduler_names: 
-    - linear
+    - constant
     - linear
   blacklist_weight_modules:
     - norm

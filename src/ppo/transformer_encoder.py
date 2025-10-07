@@ -141,6 +141,7 @@ class TransformerEncoder(nn.Module):
                 nhead=self.nhead,
                 dim_feedforward=self.dim_feedforward,
                 dropout=self.dropout,
+                norm_first=True,
                 batch_first=True,
             ),
             num_layers=self.num_layers,
