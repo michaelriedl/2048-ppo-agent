@@ -3,7 +3,7 @@ gamma: 0.99  # Discount factor
 lambda_gae: 0.95  # GAE lambda
 clip_epsilon: 0.2  # PPO clipping parameter
 value_loss_coef: 0.5
-entropy_coef: 0.01
+entropy_coef: 0.00025
 max_grad_norm: 0.5
 target_kl: 0.015
 use_action_mask: true  # Whether to use action masking
