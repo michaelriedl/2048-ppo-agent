@@ -71,14 +71,18 @@ class PPOAgent(nn.Module):
         # Actor head (policy)
         self.actor = nn.Sequential(
             nn.Linear(d_model, hidden_dim),
-            nn.GELU(),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
             nn.Linear(hidden_dim, action_dim, bias=False),
         )
 
         # Critic head (value function)
         self.critic = nn.Sequential(
             nn.Linear(d_model, hidden_dim),
-            nn.GELU(),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
             nn.Linear(hidden_dim, 1, bias=False),
         )
 
