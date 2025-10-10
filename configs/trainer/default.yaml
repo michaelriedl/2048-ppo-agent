@@ -3,7 +3,7 @@ gamma: 0.99  # Discount factor
 lambda_gae: 0.9  # GAE lambda
 clip_epsilon: 0.1  # PPO clipping parameter
 value_loss_coef: 0.5
-entropy_coef: 0.00025
+entropy_coef: 0.001
 max_grad_norm: 0.5
 target_kl: 0.015
 use_action_mask: true  # Whether to use action masking
@@ -13,9 +13,9 @@ optim:
   max_lr: 5e-5
   betas:
     - 0.9
-    - 0.98
+    - 0.999
   eps: 1e-6
-  weight_decay: 0.1
+  weight_decay: 0.01
   warmup_steps_ratio: 0.025
   scheduler_names: 
     - constant
@@ -38,4 +38,4 @@ save_freq: 100000000
 max_steps: 500000
 
 # Buffer configuration
-buffer_size: 100000
+buffer_size: 1500000
