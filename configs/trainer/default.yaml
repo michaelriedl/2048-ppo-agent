@@ -3,9 +3,9 @@ gamma: 0.99  # Discount factor
 lambda_gae: 0.95  # GAE lambda
 clip_epsilon: 0.2  # PPO clipping parameter
 value_loss_coef: 0.5
-entropy_coef: 0.001
+entropy_coef: 0.01
 max_grad_norm: 0.5
-target_kl: 0.015
+target_kl: 0.05
 use_action_mask: true  # Whether to use action masking
 # Optimizer configuration
 optim:
@@ -19,7 +19,7 @@ optim:
   warmup_steps_ratio: 0.025
   scheduler_names: 
     - constant
-    - linear
+    - constant
   blacklist_weight_modules:
     - norm
     - embedding
@@ -32,10 +32,10 @@ resume_extend_steps: true  # If true, extend training by total_timesteps; if fal
 total_timesteps: 1000000000
 rollout_batch_size: 512  # Parallel environments
 rollout_batches: 10  # Number of rollout batches per iteration
-update_epochs: 4  # Epochs per policy update
+update_epochs: 10  # Epochs per policy update
 train_batch_size: 2048
 save_freq: 100000000
 max_steps: 500000
 
 # Buffer configuration
-buffer_size: 1500000
+buffer_size: 2500000
