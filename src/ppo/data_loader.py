@@ -18,7 +18,7 @@ class PPODataset(Dataset):
         buffer_data: Dict[str, np.ndarray],
         gamma: float = 0.99,
         lambda_gae: float = 0.95,
-        return_norm_scale: float = 120,
+        return_norm_scale: float = 2048,
     ):
         """
         Initialize the PPO dataset.
