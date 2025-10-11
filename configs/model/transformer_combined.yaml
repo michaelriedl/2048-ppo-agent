@@ -8,3 +8,4 @@ nhead: 8
 num_layers: 4
 dim_feedforward: 1024
 dropout: 0.1
+reduction: "mean"  # Transformer output reduction method: "mean" or "cls"

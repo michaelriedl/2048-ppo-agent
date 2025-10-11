@@ -132,6 +132,8 @@ class TransformerEncoder(nn.Module):
         self.positional_encoding = PositionalEncoding2D(
             BOARD_DIM[0], BOARD_DIM[1], channels=self.d_model, dropout=self.dropout
         )
+        # Create the CLS token
+        self.cls_token = nn.Parameter(torch.randn(1, 1, self.d_model))
         # Create the transformer encoder
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -144,7 +146,7 @@ class TransformerEncoder(nn.Module):
             num_layers=self.num_layers,
         )
 
-    def forward(self, src: torch.Tensor) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, reduction: str = "mean") -> torch.Tensor:
         """
         Forward pass of the transformer encoder.
 
@@ -152,10 +154,36 @@ class TransformerEncoder(nn.Module):
         ----------
         src : torch.Tensor
             The sequence to the encoder (required) with shape (batch_size, seq_len, d_model).
+        reduction : str, optional
+            The reduction method to use. Either "mean" or "cls". Default is "mean".
 
         Returns
         -------
         torch.Tensor
-            The output tensor with shape (batch_size, seq_len, d_model).
+            The output tensor with shape (batch_size, d_model).
         """
-        return self.encoder(self.positional_encoding.forward_flat(src))
+        if reduction not in ["mean", "cls"]:
+            raise ValueError(f"reduction must be 'mean' or 'cls', got {reduction}")
+
+        # Apply positional encoding
+        src_with_pos = self.positional_encoding.forward_flat(src)
+
+        # Add CLS token to the beginning of the sequence
+        batch_size = src_with_pos.shape[0]
+        cls_tokens = self.cls_token.expand(
+            batch_size, -1, -1
+        )  # (batch_size, 1, d_model)
+        src_with_cls = torch.cat(
+            [cls_tokens, src_with_pos], dim=1
+        )  # (batch_size, seq_len+1, d_model)
+
+        # Pass through transformer encoder
+        encoder_output = self.encoder(src_with_cls)
+
+        # Apply reduction
+        if reduction == "cls":
+            # Return the CLS token output (first token)
+            return encoder_output[:, 0, :]  # (batch_size, d_model)
+        else:  # reduction == "mean"
+            # Return the mean of all tokens except CLS token
+            return encoder_output[:, 1:, :].mean(dim=1)  # (batch_size, d_model)

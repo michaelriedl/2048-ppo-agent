@@ -519,12 +519,10 @@ class TestPPOAgent:
         # Forward pass through embedding and transformer
         embedded = agent.input_embedding(sample_observations)
         transformer_out = agent.transformer(embedded)
-        features = transformer_out.mean(dim=1)
 
         # Check intermediate shapes
         assert embedded.shape == (batch_size, 16, 128)  # d_model = 128
-        assert transformer_out.shape == (batch_size, 16, 128)
-        assert features.shape == (batch_size, 128)
+        assert transformer_out.shape == (batch_size, 128)  # Reduced output
 
     @pytest.mark.parametrize("observation_dim,action_dim", [(16, 2), (31, 4), (64, 8)])
     def test_different_dimensions(self, observation_dim, action_dim):
