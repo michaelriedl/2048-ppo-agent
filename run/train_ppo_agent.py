@@ -58,6 +58,7 @@ def main(cfg: DictConfig) -> Optional[float]:
         num_layers=cfg.model.num_layers,
         dim_feedforward=cfg.model.dim_feedforward,
         dropout=cfg.model.dropout,
+        reduction=cfg.model.reduction,
     )
 
     logger.info(

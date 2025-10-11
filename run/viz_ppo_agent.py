@@ -159,6 +159,7 @@ def load_trained_agent(results_dir: str, device: torch.device) -> PPOAgent:
         num_layers=cfg.model.num_layers,
         dim_feedforward=cfg.model.dim_feedforward,
         dropout=cfg.model.dropout,
+        reduction=cfg.model.reduction,
     ).to(device)
 
     # Load the checkpoint
