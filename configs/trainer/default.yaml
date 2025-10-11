@@ -1,7 +1,7 @@
 # Training configuration
 gamma: 0.99  # Discount factor
-lambda_gae: 0.9  # GAE lambda
-clip_epsilon: 0.1  # PPO clipping parameter
+lambda_gae: 0.95  # GAE lambda
+clip_epsilon: 0.2  # PPO clipping parameter
 value_loss_coef: 0.5
 entropy_coef: 0.001
 max_grad_norm: 0.5
@@ -10,7 +10,7 @@ use_action_mask: true  # Whether to use action masking
 # Optimizer configuration
 optim:
   opt_name: lamb
-  max_lr: 5e-5
+  max_lr: 1.25e-3
   betas:
     - 0.9
     - 0.999
