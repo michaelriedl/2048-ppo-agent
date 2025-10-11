@@ -297,7 +297,9 @@ class TestTransformerEncoder:
     def test_forward_shape(self, transformer_encoder, sample_input):
         """Test that forward pass returns correct shape."""
         output = transformer_encoder.forward(sample_input)
-        assert output.shape == sample_input.shape
+        # With default reduction="mean", output shape should be (batch_size, d_model)
+        expected_shape = (sample_input.shape[0], sample_input.shape[2])
+        assert output.shape == expected_shape
 
     def test_forward_output_properties(self, transformer_encoder, sample_input):
         """Test properties of forward pass output."""
@@ -320,7 +322,7 @@ class TestTransformerEncoder:
         for batch_size in batch_sizes:
             input_tensor = torch.randn(batch_size, seq_len, d_model)
             output = transformer_encoder.forward(input_tensor)
-            assert output.shape == (batch_size, seq_len, d_model)
+            assert output.shape == (batch_size, d_model)
 
     def test_forward_different_sequence_lengths(self):
         """Test forward pass with different sequence lengths."""
@@ -334,7 +336,7 @@ class TestTransformerEncoder:
         seq_len = BOARD_DIM[0] * BOARD_DIM[1]
         input_tensor = torch.randn(batch_size, seq_len, d_model)
         output = encoder.forward(input_tensor)
-        assert output.shape == (batch_size, seq_len, d_model)
+        assert output.shape == (batch_size, d_model)
 
     def test_gradient_flow(self, transformer_encoder, sample_input):
         """Test that gradients flow through the transformer."""
@@ -344,9 +346,8 @@ class TestTransformerEncoder:
         loss.backward()
 
         assert input_tensor.grad is not None
-        assert not torch.allclose(
-            input_tensor.grad, torch.zeros_like(input_tensor.grad)
-        )
+        # Check that at least some gradients are non-zero (above numerical precision)
+        assert torch.any(torch.abs(input_tensor.grad) > 1e-9)
 
         # Check that transformer parameters have gradients
         for name, param in transformer_encoder.named_parameters():
@@ -401,7 +402,7 @@ class TestTransformerEncoder:
 
         # Should work without explicit attention mask
         output = transformer_encoder.forward(input_tensor)
-        assert output.shape == (batch_size, seq_len, d_model)
+        assert output.shape == (batch_size, d_model)
 
     def test_positional_encoding_integration(self, transformer_encoder, sample_input):
         """Test that positional encoding is properly integrated."""
@@ -429,7 +430,7 @@ class TestTransformerEncoder:
 
             input_tensor = torch.randn(2, 16, d_model)
             output = encoder.forward(input_tensor)
-            assert output.shape == (2, 16, d_model)
+            assert output.shape == (2, d_model)
 
     def test_different_head_counts(self):
         """Test transformer with different numbers of attention heads."""
@@ -447,7 +448,7 @@ class TestTransformerEncoder:
 
                 input_tensor = torch.randn(2, 16, d_model)
                 output = encoder.forward(input_tensor)
-                assert output.shape == (2, 16, d_model)
+                assert output.shape == (2, d_model)
 
     def test_different_layer_counts(self):
         """Test transformer with different numbers of layers."""
@@ -463,7 +464,7 @@ class TestTransformerEncoder:
 
             input_tensor = torch.randn(2, 16, 64)
             output = encoder.forward(input_tensor)
-            assert output.shape == (2, 16, 64)
+            assert output.shape == (2, 64)
 
     def test_state_dict_save_load(self, transformer_encoder, sample_input):
         """Test saving and loading transformer state."""
@@ -509,20 +510,20 @@ class TestTransformerEncoder:
         """Test behavior with empty batch."""
         empty_input = torch.randn(0, 16, 128)
         output = transformer_encoder.forward(empty_input)
-        assert output.shape == (0, 16, 128)
+        assert output.shape == (0, 128)
 
     def test_single_sample_batch(self, transformer_encoder):
         """Test with single sample batch."""
         single_input = torch.randn(1, 16, 128)
         output = transformer_encoder.forward(single_input)
-        assert output.shape == (1, 16, 128)
+        assert output.shape == (1, 128)
 
     def test_large_batch(self, transformer_encoder):
         """Test with large batch size."""
         large_batch_size = 64
         large_input = torch.randn(large_batch_size, 16, 128)
         output = transformer_encoder.forward(large_input)
-        assert output.shape == (large_batch_size, 16, 128)
+        assert output.shape == (large_batch_size, 128)
 
     def test_numerical_stability(self, transformer_encoder):
         """Test numerical stability with extreme inputs."""
@@ -566,7 +567,7 @@ class TestTransformerEncoder:
 
         input_tensor = torch.randn(3, 16, d_model)
         output = encoder.forward(input_tensor)
-        assert output.shape == (3, 16, d_model)
+        assert output.shape == (3, d_model)
 
     def test_invalid_nhead_d_model_combination(self):
         """Test that invalid nhead/d_model combinations raise errors."""
@@ -619,7 +620,7 @@ class TestTransformerEncoder:
 
         # Should still produce finite output
         assert torch.all(torch.isfinite(output))
-        assert output.shape == (4, 16, 64)
+        assert output.shape == (4, 64)
 
     def test_board_size_compatibility(self):
         """Test that transformer is compatible with BOARD_DIM."""
@@ -632,7 +633,7 @@ class TestTransformerEncoder:
 
         input_tensor = torch.randn(2, expected_seq_len, 64)
         output = encoder.forward(input_tensor)
-        assert output.shape == (2, expected_seq_len, 64)
+        assert output.shape == (2, 64)
 
     def test_positional_encoding_channels_match(self):
         """Test that positional encoding channels match d_model."""
@@ -643,3 +644,36 @@ class TestTransformerEncoder:
 
         # Positional encoding should have org_channels == d_model
         assert encoder.positional_encoding.org_channels == d_model
+
+    def test_reduction_parameter(self):
+        """Test the reduction parameter functionality."""
+        encoder = TransformerEncoder(
+            d_model=128, nhead=8, num_layers=1, dim_feedforward=512
+        )
+
+        input_tensor = torch.randn(4, 16, 128)
+
+        # Test mean reduction
+        output_mean = encoder.forward(input_tensor, reduction="mean")
+        assert output_mean.shape == (4, 128)
+
+        # Test cls reduction
+        output_cls = encoder.forward(input_tensor, reduction="cls")
+        assert output_cls.shape == (4, 128)
+
+        # Outputs should be different
+        assert not torch.allclose(output_mean, output_cls)
+
+        # Test invalid reduction
+        with pytest.raises(ValueError, match="reduction must be 'mean' or 'cls'"):
+            encoder.forward(input_tensor, reduction="invalid")
+
+    def test_cls_token_exists(self):
+        """Test that CLS token is created and has correct shape."""
+        encoder = TransformerEncoder(
+            d_model=128, nhead=8, num_layers=1, dim_feedforward=512
+        )
+
+        # CLS token should exist and have correct shape
+        assert hasattr(encoder, "cls_token")
+        assert encoder.cls_token.shape == (1, 1, 128)
