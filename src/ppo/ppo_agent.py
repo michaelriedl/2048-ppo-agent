@@ -23,6 +23,7 @@ class PPOAgent(nn.Module):
         num_layers: int = 4,
         dim_feedforward: int = 1024,
         dropout: float = 0.1,
+        reduction: str = "mean",
     ):
         """
         Initialize PPO Agent.
@@ -45,12 +46,15 @@ class PPOAgent(nn.Module):
             Feedforward dimension in transformer
         dropout : float
             Dropout rate
+        reduction : str
+            Reduction method for transformer output ("mean" or "cls")
         """
         super(PPOAgent, self).__init__()
 
         self.observation_dim = observation_dim
         self.action_dim = action_dim
         self.hidden_dim = hidden_dim
+        self.reduction = reduction
 
         # Input embedding layer
         self.input_embedding = nn.Linear(observation_dim, d_model)
@@ -103,11 +107,8 @@ class PPOAgent(nn.Module):
         # Embed observations
         embedded = self.input_embedding(observations)
 
-        # Pass through transformer
-        transformer_out = self.transformer(embedded)
-
-        # Reduce the sequence to a single embedding
-        features = transformer_out.mean(dim=1)
+        # Pass through transformer with the specified reduction method
+        features = self.transformer(embedded, reduction=self.reduction)
 
         # Actor output (action logits)
         action_logits = self.actor(features)
