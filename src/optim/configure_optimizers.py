@@ -61,10 +61,12 @@ def configure_bert_optimizers(
 
     """
     # Validate the optimizer name
-    if opt_name not in ["adamw", "lamb"]:
+    if opt_name not in ["adam", "adamw", "lamb"]:
         raise TypeError(f"Invalid optimizer name: {opt_name}")
     # Select the optimizer
-    if opt_name == "adamw":
+    if opt_name == "adam":
+        optim_func = torch.optim.Adam
+    elif opt_name == "adamw":
         optim_func = torch.optim.AdamW
     elif opt_name == "lamb":
         optim_func = Lamb

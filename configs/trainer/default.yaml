@@ -9,7 +9,7 @@ target_kl: 0.05
 use_action_mask: true  # Whether to use action masking
 # Optimizer configuration
 optim:
-  opt_name: lamb
+  opt_name: adamw
   max_lr: 1.25e-3
   betas:
     - 0.9
