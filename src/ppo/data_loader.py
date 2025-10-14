@@ -56,7 +56,7 @@ class PPODataset(Dataset):
             self.advantages.std() + 1e-8
         )
         # Normalize returns
-        self.returns = self.returns / self.return_norm_scale
+        self.returns = self.returns / (self.returns.std() + 1e-8)
 
         self.length = len(self.observations)
 
