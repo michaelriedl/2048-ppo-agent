@@ -18,7 +18,6 @@ class PPODataset(Dataset):
         buffer_data: Dict[str, np.ndarray],
         gamma: float = 0.99,
         lambda_gae: float = 0.95,
-        return_norm_scale: float = 2048,
     ):
         """
         Initialize the PPO dataset.
@@ -32,12 +31,9 @@ class PPODataset(Dataset):
             Discount factor for returns computation
         lambda_gae : float, default=0.95
             Lambda parameter for GAE computation
-        return_norm_scale : float, default=20
-            Scale factor for return normalization
         """
         self.gamma = gamma
         self.lambda_gae = lambda_gae
-        self.return_norm_scale = return_norm_scale
 
         # Convert numpy arrays to torch tensors
         self.observations = torch.from_numpy(buffer_data["observations"]).float()
@@ -56,7 +52,9 @@ class PPODataset(Dataset):
             self.advantages.std() + 1e-8
         )
         # Normalize returns
-        self.returns = self.returns / self.return_norm_scale
+        self.returns = (self.returns - self.returns.mean()) / (
+            self.returns.std() + 1e-8
+        )
 
         self.length = len(self.observations)
 
