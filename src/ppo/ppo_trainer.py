@@ -1,10 +1,10 @@
 import logging
-from typing import Dict
+from typing import Dict, Literal, Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 
 from ..optim import configure_bert_optimizers
@@ -38,6 +38,7 @@ class PPOTrainer:
         target_kl: float = 0.01,
         use_action_mask: bool = False,
         device: torch.device = torch.device("cpu"),
+        mixed_precision: Optional[Literal["float16", "bfloat16"]] = "bfloat16",
     ):
         """
         Initialize PPO Trainer.
@@ -72,6 +73,9 @@ class PPOTrainer:
             Whether to use action masking for invalid actions
         device : torch.device, default=torch.device("cpu")
             Device to run training on (CPU or CUDA)
+        mixed_precision : Optional[Literal["float16", "bfloat16"]], default="bfloat16"
+            Enable mixed precision training. Use "float16" for float16 or "bfloat16" for bfloat16.
+            If None, mixed precision is disabled. Only effective when device is CUDA.
         """
         self.agent = agent.to(device)
         self.batch_runner = batch_runner
@@ -87,6 +91,27 @@ class PPOTrainer:
         self.target_kl = target_kl
         self.use_action_mask = use_action_mask
         self.device = device
+
+        # Mixed precision training setup
+        self.mixed_precision = mixed_precision
+        self.use_amp = mixed_precision is not None and device.type == "cuda"
+        if self.use_amp:
+            self.scaler = GradScaler()
+            # Map string to torch dtype
+            self.amp_dtype = (
+                torch.float16 if mixed_precision == "float16" else torch.bfloat16
+            )
+            logger.info(
+                f"Mixed precision training enabled with dtype: {self.amp_dtype}"
+            )
+        else:
+            self.scaler = None
+            self.amp_dtype = None
+            if mixed_precision is not None and device.type != "cuda":
+                logger.warning(
+                    f"Mixed precision training requested but device is {device.type}. "
+                    "Mixed precision is only supported on CUDA devices. Disabling mixed precision."
+                )
 
         # Optimizer
         opt_dict = configure_bert_optimizers(
@@ -267,12 +292,20 @@ class PPOTrainer:
                 # Convert one-hot actions back to action indices
                 action_indices = actions.argmax(dim=-1)
 
-                # Get current policy outputs
-                new_log_probs, values, entropy = self.agent.evaluate_actions(
-                    observations,
-                    action_indices,
-                    action_mask=action_masks if self.use_action_mask else None,
-                )
+                # Get current policy outputs with mixed precision if enabled
+                if self.use_amp:
+                    with autocast(device_type="cuda", dtype=self.amp_dtype):
+                        new_log_probs, values, entropy = self.agent.evaluate_actions(
+                            observations,
+                            action_indices,
+                            action_mask=action_masks if self.use_action_mask else None,
+                        )
+                else:
+                    new_log_probs, values, entropy = self.agent.evaluate_actions(
+                        observations,
+                        action_indices,
+                        action_mask=action_masks if self.use_action_mask else None,
+                    )
 
                 # Calculate ratio (pi_theta / pi_theta_old)
                 ratio = torch.exp(new_log_probs - old_log_probs)
@@ -300,15 +333,33 @@ class PPOTrainer:
 
                 # Optimize
                 self.optimizer.zero_grad()
-                loss.backward()
 
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.agent.parameters(), self.max_grad_norm
-                )
+                if self.use_amp:
+                    # Backward pass with gradient scaling
+                    self.scaler.scale(loss).backward()
 
-                # Step optimizer and scheduler
-                self.optimizer.step()
+                    # Gradient clipping (unscale first for accurate clipping)
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.agent.parameters(), self.max_grad_norm
+                    )
+
+                    # Optimizer step with scaler
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    # Standard backward pass
+                    loss.backward()
+
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(
+                        self.agent.parameters(), self.max_grad_norm
+                    )
+
+                    # Optimizer step
+                    self.optimizer.step()
+
+                # Step learning rate scheduler
                 self.lr_scheduler.step()
 
                 # Update metrics
@@ -378,6 +429,10 @@ class PPOTrainer:
             "last_save_timestep": self.last_save_timestep,
         }
 
+        # Save GradScaler state if using mixed precision
+        if self.use_amp and self.scaler is not None:
+            checkpoint["scaler_state_dict"] = self.scaler.state_dict()
+
         torch.save(checkpoint, filename)
         logger.info(
             f"Checkpoint saved to {filename} (timesteps: {self.total_timesteps})"
@@ -429,6 +484,22 @@ class PPOTrainer:
         self.episode_rewards = checkpoint.get("episode_rewards", [])
         self.episode_lengths = checkpoint.get("episode_lengths", [])
         self.last_save_timestep = checkpoint.get("last_save_timestep", 0)
+
+        # Load GradScaler state if available and using mixed precision
+        if self.use_amp and self.scaler is not None:
+            if "scaler_state_dict" in checkpoint:
+                try:
+                    self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+                    logger.info("Successfully loaded GradScaler state")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to load GradScaler state: {e}. "
+                        "Training will continue with fresh GradScaler state."
+                    )
+            else:
+                logger.info(
+                    "No GradScaler state found in checkpoint. Using fresh GradScaler state."
+                )
 
         logger.info(f"Checkpoint loaded successfully:")
         logger.info(f"  - Total timesteps: {self.total_timesteps}")
