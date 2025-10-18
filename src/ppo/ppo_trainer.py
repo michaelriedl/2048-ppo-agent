@@ -4,7 +4,7 @@ from typing import Dict, Literal, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 
 from ..optim import configure_bert_optimizers
