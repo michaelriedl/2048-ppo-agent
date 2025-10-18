@@ -292,7 +292,7 @@ class PPOTrainer:
                 # Convert one-hot actions back to action indices
                 action_indices = actions.argmax(dim=-1)
 
-                # Get current policy outputs with mixed precision if enabled
+                # Get current policy outputs and calculate loss with mixed precision if enabled
                 if self.use_amp:
                     with autocast(device_type="cuda", dtype=self.amp_dtype):
                         new_log_probs, values, entropy = self.agent.evaluate_actions(
@@ -300,6 +300,34 @@ class PPOTrainer:
                             action_indices,
                             action_mask=action_masks if self.use_action_mask else None,
                         )
+
+                        # Calculate ratio (pi_theta / pi_theta_old)
+                        ratio = torch.exp(new_log_probs - old_log_probs)
+
+                        # Surrogate loss
+                        surr1 = ratio * advantages
+                        surr2 = (
+                            torch.clamp(
+                                ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon
+                            )
+                            * advantages
+                        )
+                        policy_loss = -torch.min(surr1, surr2)
+
+                        # Value loss
+                        value_loss = F.mse_loss(
+                            values.flatten(), returns, reduction="none"
+                        )
+
+                        # Entropy loss
+                        entropy_loss = -entropy
+
+                        # Total loss
+                        loss = (
+                            policy_loss
+                            + self.value_loss_coef * value_loss
+                            + self.entropy_coef * entropy_loss
+                        ).mean()
                 else:
                     new_log_probs, values, entropy = self.agent.evaluate_actions(
                         observations,
@@ -307,29 +335,29 @@ class PPOTrainer:
                         action_mask=action_masks if self.use_action_mask else None,
                     )
 
-                # Calculate ratio (pi_theta / pi_theta_old)
-                ratio = torch.exp(new_log_probs - old_log_probs)
+                    # Calculate ratio (pi_theta / pi_theta_old)
+                    ratio = torch.exp(new_log_probs - old_log_probs)
 
-                # Surrogate loss
-                surr1 = ratio * advantages
-                surr2 = (
-                    torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
-                    * advantages
-                )
-                policy_loss = -torch.min(surr1, surr2)
+                    # Surrogate loss
+                    surr1 = ratio * advantages
+                    surr2 = (
+                        torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon)
+                        * advantages
+                    )
+                    policy_loss = -torch.min(surr1, surr2)
 
-                # Value loss
-                value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
+                    # Value loss
+                    value_loss = F.mse_loss(values.flatten(), returns, reduction="none")
 
-                # Entropy loss
-                entropy_loss = -entropy
+                    # Entropy loss
+                    entropy_loss = -entropy
 
-                # Total loss
-                loss = (
-                    policy_loss
-                    + self.value_loss_coef * value_loss
-                    + self.entropy_coef * entropy_loss
-                ).mean()
+                    # Total loss
+                    loss = (
+                        policy_loss
+                        + self.value_loss_coef * value_loss
+                        + self.entropy_coef * entropy_loss
+                    ).mean()
 
                 # Optimize
                 self.optimizer.zero_grad()
