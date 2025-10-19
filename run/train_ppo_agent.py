@@ -94,6 +94,7 @@ def main(cfg: DictConfig) -> Optional[float]:
         target_kl=cfg.trainer.target_kl,
         use_action_mask=cfg.trainer.use_action_mask,
         device=device,
+        mixed_precision=cfg.trainer.mixed_precision,
     )
 
     logger.info("Starting training loop")
