@@ -125,6 +125,8 @@ class PPOTrainer:
 
         # Training metrics
         self.total_timesteps = 0
+        self.total_epochs = 0
+        self.total_update_steps = 0
         self.episode_rewards = []
         self.episode_lengths = []
         self.last_save_timestep = 0
@@ -420,11 +422,17 @@ class PPOTrainer:
                 total_loss += loss.item()
                 n_updates += 1
 
+                # Increment total update steps
+                self.total_update_steps += 1
+
                 # Calculate KL divergence for early stopping
                 with torch.no_grad():
                     kl_div = (old_log_probs - new_log_probs).mean().item()
                     epoch_kl_div += kl_div
                     epoch_batches += 1
+
+            # Increment total epochs
+            self.total_epochs += 1
 
             # Check for early stopping
             mean_kl_div = epoch_kl_div / epoch_batches if epoch_batches > 0 else 0
@@ -454,6 +462,14 @@ class PPOTrainer:
                 "train/lr", self.lr_scheduler.get_last_lr()[0], self.total_timesteps
             )
 
+        # Log total epochs and update steps
+        self.writer.add_scalar(
+            "train/total_epochs", self.total_epochs, self.total_timesteps
+        )
+        self.writer.add_scalar(
+            "train/total_update_steps", self.total_update_steps, self.total_timesteps
+        )
+
         # Log the distribution of the magnitude of the model parameters
         for name, param in self.agent.named_parameters():
             self.writer.add_histogram(
@@ -475,6 +491,8 @@ class PPOTrainer:
             "agent_state_dict": self.agent.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "total_timesteps": self.total_timesteps,
+            "total_epochs": self.total_epochs,
+            "total_update_steps": self.total_update_steps,
             "episode_rewards": self.episode_rewards,
             "episode_lengths": self.episode_lengths,
             "last_save_timestep": self.last_save_timestep,
@@ -532,6 +550,8 @@ class PPOTrainer:
 
         # Load training statistics
         self.total_timesteps = checkpoint.get("total_timesteps", 0)
+        self.total_epochs = checkpoint.get("total_epochs", 0)
+        self.total_update_steps = checkpoint.get("total_update_steps", 0)
         self.episode_rewards = checkpoint.get("episode_rewards", [])
         self.episode_lengths = checkpoint.get("episode_lengths", [])
         self.last_save_timestep = checkpoint.get("last_save_timestep", 0)
@@ -554,6 +574,8 @@ class PPOTrainer:
 
         logger.info(f"Checkpoint loaded successfully:")
         logger.info(f"  - Total timesteps: {self.total_timesteps}")
+        logger.info(f"  - Total epochs: {self.total_epochs}")
+        logger.info(f"  - Total update steps: {self.total_update_steps}")
         logger.info(
             f"  - Episode rewards history: {len(self.episode_rewards)} episodes"
         )
