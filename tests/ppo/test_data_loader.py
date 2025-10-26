@@ -165,7 +165,6 @@ class TestFactoryFunction:
     def sample_buffer_data(self):
         """Create sample buffer data using RolloutBuffer."""
         buffer = RolloutBuffer(
-            total_buffer_size=100,
             observation_dim=16,
             observation_length=20,
             action_dim=4,

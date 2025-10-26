@@ -72,7 +72,6 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     # Create rollout buffer
     rollout_buffer = RolloutBuffer(
-        total_buffer_size=cfg.trainer.buffer_size,
         observation_dim=cfg.model.observation_dim,
         observation_length=cfg.model.observation_length,
         action_dim=cfg.model.action_dim,

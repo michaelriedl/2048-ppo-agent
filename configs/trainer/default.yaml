@@ -37,6 +37,3 @@ update_epochs: 5  # Epochs per policy update
 train_batch_size: 2048
 save_freq: 100000000
 max_steps: 500000
-
-# Buffer configuration
-buffer_size: 5000000

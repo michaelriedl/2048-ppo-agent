@@ -13,57 +13,52 @@ class TestRolloutBuffer:
     def test_initialization(self):
         """Test that RolloutBuffer initializes correctly."""
         buffer = RolloutBuffer(
-            total_buffer_size=100,
             observation_dim=16,
             observation_length=10,
             action_dim=4,
         )
 
-        assert buffer.total_buffer_size == 100
         assert buffer.observation_dim == 16
         assert buffer.observation_length == 10
         assert buffer.action_dim == 4
         assert buffer.buffer_size == 0
 
-        # Check buffer shapes
-        assert buffer.observation_buffer.shape == (100, 10, 16)
-        assert buffer.action_buffer.shape == (100, 4)
-        assert buffer.action_mask_buffer.shape == (100, 4)
-        assert buffer.reward_buffer.shape == (100,)
-        assert buffer.value_buffer.shape == (100,)
-        assert buffer.log_prob_buffer.shape == (100,)
-        assert buffer.termination_buffer.shape == (100,)
+        # Check buffers are initialized as empty lists
+        assert isinstance(buffer.observation_buffer, list)
+        assert isinstance(buffer.action_buffer, list)
+        assert isinstance(buffer.action_mask_buffer, list)
+        assert isinstance(buffer.reward_buffer, list)
+        assert isinstance(buffer.value_buffer, list)
+        assert isinstance(buffer.log_prob_buffer, list)
+        assert isinstance(buffer.termination_buffer, list)
+        assert len(buffer.observation_buffer) == 0
 
     def test_reset(self):
         """Test that reset method clears all buffers."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=4, observation_length=5, action_dim=2
-        )
+        buffer = RolloutBuffer(observation_dim=4, observation_length=5, action_dim=2)
 
-        # Fill buffers with some data
-        buffer.observation_buffer.fill(1.0)
-        buffer.action_buffer.fill(2.0)
-        buffer.action_mask_buffer.fill(True)
-        buffer.reward_buffer.fill(3.0)
-        buffer.buffer_size = 5
+        # Add some data to buffers
+        buffer.observation_buffer = [np.ones((5, 4)) for _ in range(3)]
+        buffer.action_buffer = [np.ones(2) for _ in range(3)]
+        buffer.action_mask_buffer = [np.ones(2, dtype=bool) for _ in range(3)]
+        buffer.reward_buffer = [1.0, 2.0, 3.0]
+        buffer.buffer_size = 3
 
         # Reset and verify
         buffer.reset()
 
         assert buffer.buffer_size == 0
-        assert np.all(buffer.observation_buffer == 0)
-        assert np.all(buffer.action_buffer == 0)
-        assert np.all(buffer.action_mask_buffer == 0)
-        assert np.all(buffer.reward_buffer == 0)
-        assert np.all(buffer.value_buffer == 0)
-        assert np.all(buffer.log_prob_buffer == 0)
-        assert np.all(buffer.termination_buffer == 0)
+        assert len(buffer.observation_buffer) == 0
+        assert len(buffer.action_buffer) == 0
+        assert len(buffer.action_mask_buffer) == 0
+        assert len(buffer.reward_buffer) == 0
+        assert len(buffer.value_buffer) == 0
+        assert len(buffer.log_prob_buffer) == 0
+        assert len(buffer.termination_buffer) == 0
 
     def test_store_batch_single_episode(self):
         """Test storing a batch with single episodes that terminate."""
-        buffer = RolloutBuffer(
-            total_buffer_size=50, observation_dim=4, observation_length=5, action_dim=2
-        )
+        buffer = RolloutBuffer(observation_dim=4, observation_length=5, action_dim=2)
 
         # Create test data for 2 environments, each with 5 timesteps
         batch_size = 2
@@ -106,9 +101,7 @@ class TestRolloutBuffer:
 
     def test_store_batch_no_termination(self):
         """Test storing a batch where no episodes terminate."""
-        buffer = RolloutBuffer(
-            total_buffer_size=50, observation_dim=4, observation_length=5, action_dim=2
-        )
+        buffer = RolloutBuffer(observation_dim=4, observation_length=5, action_dim=2)
 
         batch_size = 2
         time_steps = 5
@@ -136,17 +129,16 @@ class TestRolloutBuffer:
         # Should store 0 steps since no terminations
         assert buffer.buffer_size == 0
 
-    def test_store_batch_buffer_overflow(self):
-        """Test that store_batch handles buffer overflow correctly."""
+    def test_store_batch_large_data(self):
+        """Test storing a large batch with many steps."""
         buffer = RolloutBuffer(
-            total_buffer_size=5,
             observation_dim=2,
             observation_length=3,
-            action_dim=1,  # Small buffer
+            action_dim=1,
         )
 
         batch_size = 1
-        time_steps = 10  # More steps than buffer can hold
+        time_steps = 100  # Large number of steps
 
         observations = np.random.randn(batch_size, time_steps, 3, 2).astype(np.float32)
         actions = np.random.randn(batch_size, time_steps, 1).astype(np.float32)
@@ -157,9 +149,9 @@ class TestRolloutBuffer:
         values = np.random.randn(batch_size, time_steps).astype(np.float32)
         log_probs = np.random.randn(batch_size, time_steps).astype(np.float32)
 
-        # Terminate at step 8 (would be 9 steps total)
+        # Terminate at step 95 (would be 96 steps total)
         terminations = np.zeros((batch_size, time_steps), dtype=bool)
-        terminations[0, 8] = True
+        terminations[0, 95] = True
 
         buffer.store_batch(
             observations,
@@ -171,24 +163,35 @@ class TestRolloutBuffer:
             terminations,
         )
 
-        # Should only store 5 steps (buffer capacity)
-        assert buffer.buffer_size == 5
+        # Should store all 96 steps (0-95 inclusive)
+        assert buffer.buffer_size == 96
 
     def test_get_buffer_data(self):
         """Test that get_buffer_data returns correct data structure."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=3, observation_length=4, action_dim=2
-        )
+        buffer = RolloutBuffer(observation_dim=3, observation_length=4, action_dim=2)
 
-        # Simulate some stored data
-        buffer.buffer_size = 5
-        buffer.observation_buffer[:5] = np.ones((5, 4, 3))
-        buffer.action_buffer[:5] = np.ones((5, 2)) * 2
-        buffer.action_mask_buffer[:5] = True
-        buffer.reward_buffer[:5] = np.ones(5) * 3
-        buffer.value_buffer[:5] = np.ones(5) * 4
-        buffer.log_prob_buffer[:5] = np.ones(5) * 5
-        buffer.termination_buffer[:5] = True
+        # Create test data
+        batch_size = 1
+        time_steps = 5
+
+        observations = np.ones((batch_size, time_steps, 4, 3), dtype=np.float32)
+        actions = np.ones((batch_size, time_steps, 2), dtype=np.float32) * 2
+        action_masks = np.ones((batch_size, time_steps, 2), dtype=bool)
+        rewards = np.ones((batch_size, time_steps), dtype=np.float32) * 3
+        values = np.ones((batch_size, time_steps), dtype=np.float32) * 4
+        log_probs = np.ones((batch_size, time_steps), dtype=np.float32) * 5
+        terminations = np.zeros((batch_size, time_steps), dtype=bool)
+        terminations[0, 4] = True
+
+        buffer.store_batch(
+            observations,
+            actions,
+            action_masks,
+            rewards,
+            values,
+            log_probs,
+            terminations,
+        )
 
         data = buffer.get_buffer_data()
 
@@ -214,13 +217,11 @@ class TestRolloutBuffer:
         assert np.all(data["rewards"] == 3)
         assert np.all(data["values"] == 4)
         assert np.all(data["log_probs"] == 5)
-        assert np.all(data["terminations"] == True)
+        assert data["terminations"][-1] == True  # Last one is termination
 
     def test_multiple_store_calls(self):
         """Test that multiple calls to store_batch accumulate data correctly."""
-        buffer = RolloutBuffer(
-            total_buffer_size=20, observation_dim=2, observation_length=3, action_dim=1
-        )
+        buffer = RolloutBuffer(observation_dim=2, observation_length=3, action_dim=1)
 
         # First batch
         batch_size = 1
@@ -287,9 +288,7 @@ class TestRolloutBuffer:
 
     def test_empty_batch_store(self):
         """Test storing empty batch (batch_size=0)."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
-        )
+        buffer = RolloutBuffer(observation_dim=2, observation_length=5, action_dim=1)
 
         # Create empty batch
         observations = np.empty((0, 5, 5, 2), dtype=np.float32)
@@ -315,9 +314,7 @@ class TestRolloutBuffer:
 
     def test_termination_at_first_step(self):
         """Test behavior when episode terminates at the very first step."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
-        )
+        buffer = RolloutBuffer(observation_dim=2, observation_length=5, action_dim=1)
 
         batch_size = 1
         time_steps = 5
@@ -348,9 +345,7 @@ class TestRolloutBuffer:
 
     def test_multiple_terminations_in_episode(self):
         """Test behavior when there are multiple terminations in one episode."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=2, observation_length=5, action_dim=1
-        )
+        buffer = RolloutBuffer(observation_dim=2, observation_length=5, action_dim=1)
 
         batch_size = 1
         time_steps = 5
@@ -382,9 +377,7 @@ class TestRolloutBuffer:
 
     def test_dtype_preservation(self):
         """Test that data types are preserved correctly."""
-        buffer = RolloutBuffer(
-            total_buffer_size=10, observation_dim=2, observation_length=3, action_dim=1
-        )
+        buffer = RolloutBuffer(observation_dim=2, observation_length=3, action_dim=1)
 
         batch_size = 1
         time_steps = 3
@@ -423,7 +416,6 @@ class TestRolloutBuffer:
     def test_large_batch_processing(self):
         """Test processing a large batch to ensure performance is reasonable."""
         buffer = RolloutBuffer(
-            total_buffer_size=10000,
             observation_dim=64,
             observation_length=50,
             action_dim=4,
@@ -464,112 +456,47 @@ class TestRolloutBuffer:
 
         # Verify some data was stored
         assert buffer.buffer_size > 0
-        assert buffer.buffer_size <= buffer.total_buffer_size
 
         data = buffer.get_buffer_data()
         assert len(data) == 7  # All expected keys
 
-    def test_is_full_property(self):
-        """Test that is_full property works correctly."""
-        buffer = RolloutBuffer(
-            total_buffer_size=5, observation_dim=2, observation_length=3, action_dim=1
-        )
-
-        # Initially buffer should not be full
-        assert not buffer.is_full
-        assert buffer.buffer_size == 0
-
-        # Manually set buffer size to test property
-        buffer.buffer_size = 3
-        assert not buffer.is_full
-
-        buffer.buffer_size = 5
-        assert buffer.is_full
-
-        # Test with actual data storage
-        buffer.reset()
-        assert not buffer.is_full
-
-        # Store data that fills the buffer
-        batch_size = 1
-        time_steps = 10
-
-        observations = np.ones((batch_size, time_steps, 3, 2), dtype=np.float32)
-        actions = np.ones((batch_size, time_steps, 1), dtype=np.float32)
-        action_masks = np.ones((batch_size, time_steps, 1), dtype=bool)
-        rewards = np.ones((batch_size, time_steps), dtype=np.float32)
-        values = np.ones((batch_size, time_steps), dtype=np.float32)
-        log_probs = np.ones((batch_size, time_steps), dtype=np.float32)
-
-        # Terminate at step 4 to fill the buffer exactly
-        terminations = np.zeros((batch_size, time_steps), dtype=bool)
-        terminations[0, 4] = True  # This will store 5 steps (0-4)
-
-        buffer.store_batch(
-            observations,
-            actions,
-            action_masks,
-            rewards,
-            values,
-            log_probs,
-            terminations,
-        )
-
-        assert buffer.is_full
-        assert buffer.buffer_size == 5
-
     def test_initialization_with_tuple_observation_length(self):
         """Test that RolloutBuffer initializes correctly with tuple observation_length."""
         buffer = RolloutBuffer(
-            total_buffer_size=50,
             observation_dim=8,
             observation_length=(4, 4),  # 2D observation space
             action_dim=2,
         )
 
-        assert buffer.total_buffer_size == 50
         assert buffer.observation_dim == 8
         assert buffer.observation_length == (4, 4)
         assert buffer.action_dim == 2
         assert buffer.buffer_size == 0
 
-        # Check buffer shapes - should be (50, 4, 4, 8)
-        assert buffer.observation_buffer.shape == (50, 4, 4, 8)
-        assert buffer.action_buffer.shape == (50, 2)
-        assert buffer.action_mask_buffer.shape == (50, 2)
-        assert buffer.reward_buffer.shape == (50,)
-        assert buffer.value_buffer.shape == (50,)
-        assert buffer.log_prob_buffer.shape == (50,)
-        assert buffer.termination_buffer.shape == (50,)
+        # Check buffers are initialized as empty lists
+        assert isinstance(buffer.observation_buffer, list)
+        assert len(buffer.observation_buffer) == 0
 
     def test_initialization_with_list_observation_length(self):
         """Test that RolloutBuffer initializes correctly with list observation_length."""
         buffer = RolloutBuffer(
-            total_buffer_size=30,
             observation_dim=4,
             observation_length=[2, 3, 5],  # 3D observation space
             action_dim=3,
         )
 
-        assert buffer.total_buffer_size == 30
         assert buffer.observation_dim == 4
         assert buffer.observation_length == [2, 3, 5]
         assert buffer.action_dim == 3
         assert buffer.buffer_size == 0
 
-        # Check buffer shapes - should be (30, 2, 3, 5, 4)
-        assert buffer.observation_buffer.shape == (30, 2, 3, 5, 4)
-        assert buffer.action_buffer.shape == (30, 3)
-        assert buffer.action_mask_buffer.shape == (30, 3)
-        assert buffer.reward_buffer.shape == (30,)
-        assert buffer.value_buffer.shape == (30,)
-        assert buffer.log_prob_buffer.shape == (30,)
-        assert buffer.termination_buffer.shape == (30,)
+        # Check buffers are initialized as empty lists
+        assert isinstance(buffer.observation_buffer, list)
+        assert len(buffer.observation_buffer) == 0
 
     def test_validate_and_reshape_observations_correct_shape(self):
         """Test that observations with correct shape pass through unchanged."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=4,
             observation_length=5,
             action_dim=2,
@@ -589,7 +516,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_flattened_input(self):
         """Test that flattened observations can be reshaped correctly."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=4,
             observation_length=5,
             action_dim=2,
@@ -615,7 +541,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_2d_to_3d(self):
         """Test reshaping observations with 2D observation_length when flattened."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=3,
             observation_length=(4, 4),  # 2D spatial observation
             action_dim=2,
@@ -641,7 +566,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_incompatible_shape(self):
         """Test that incompatible observation shapes raise ValueError."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=4,
             observation_length=5,
             action_dim=2,
@@ -664,7 +588,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_complex_shape_mismatch(self):
         """Test error handling with complex shape mismatches."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=2,
             observation_length=(
                 3,
@@ -689,7 +612,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_insufficient_dimensions(self):
         """Test that observations with insufficient dimensions raise ValueError."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=4,
             observation_length=5,
             action_dim=2,
@@ -708,7 +630,6 @@ class TestRolloutBuffer:
     def test_validate_and_reshape_observations_tuple_observation_length(self):
         """Test validation and reshaping with tuple observation_length."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=3,
             observation_length=(4, 4),  # 2D spatial observation
             action_dim=2,
@@ -738,7 +659,6 @@ class TestRolloutBuffer:
     def test_action_mask_storage_and_retrieval(self):
         """Test that action masks are stored and retrieved correctly."""
         buffer = RolloutBuffer(
-            total_buffer_size=10,
             observation_dim=2,
             observation_length=3,
             action_dim=4,
@@ -801,22 +721,20 @@ class TestRolloutBuffer:
     def test_action_mask_buffer_initialization_and_reset(self):
         """Test that action mask buffer is properly initialized and reset."""
         buffer = RolloutBuffer(
-            total_buffer_size=5,
             observation_dim=2,
             observation_length=3,
             action_dim=3,
         )
 
         # Check initial state
-        assert buffer.action_mask_buffer.shape == (5, 3)
-        assert buffer.action_mask_buffer.dtype == bool
-        assert np.all(buffer.action_mask_buffer == False)
+        assert isinstance(buffer.action_mask_buffer, list)
+        assert len(buffer.action_mask_buffer) == 0
 
-        # Manually modify buffer
-        buffer.action_mask_buffer[0] = [True, False, True]
-        buffer.action_mask_buffer[1] = [False, True, False]
-        assert not np.all(buffer.action_mask_buffer == False)
+        # Add some data
+        buffer.action_mask_buffer.append(np.array([True, False, True]))
+        buffer.action_mask_buffer.append(np.array([False, True, False]))
+        assert len(buffer.action_mask_buffer) == 2
 
         # Reset and verify
         buffer.reset()
-        assert np.all(buffer.action_mask_buffer == False)
+        assert len(buffer.action_mask_buffer) == 0
