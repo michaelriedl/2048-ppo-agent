@@ -182,7 +182,7 @@ class RolloutBuffer:
                     self.value_buffer.append(values[batch_idx, i])
                     self.log_prob_buffer.append(log_probs[batch_idx, i])
                     self.termination_buffer.append(terminations[batch_idx, i])
-                
+
                 # Update the buffer size
                 self.buffer_size += end_idx
 
