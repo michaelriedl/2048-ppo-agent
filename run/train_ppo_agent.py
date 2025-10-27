@@ -94,6 +94,8 @@ def main(cfg: DictConfig) -> Optional[float]:
         use_action_mask=cfg.trainer.use_action_mask,
         device=device,
         mixed_precision=cfg.trainer.mixed_precision,
+        max_samples_per_epoch=cfg.trainer.max_samples_per_epoch,
+        shuffle_on_reset=cfg.trainer.shuffle_on_reset,
     )
 
     logger.info("Starting training loop")

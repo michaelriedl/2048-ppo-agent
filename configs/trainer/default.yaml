@@ -8,6 +8,11 @@ max_grad_norm: 0.5
 target_kl: 0.05
 use_action_mask: true  # Whether to use action masking
 mixed_precision: bfloat16  # Mixed precision training: null (disabled), float16, or bfloat16
+
+# Dataset limiting configuration
+max_samples_per_epoch: 150000  # Maximum number of samples to use per epoch (null = use all)
+shuffle_on_reset: true  # Whether to shuffle subset selection between epochs
+
 # Optimizer configuration
 optim:
   opt_name: adamw
