@@ -165,7 +165,6 @@ class TestFactoryFunction:
     def sample_buffer_data(self):
         """Create sample buffer data using RolloutBuffer."""
         buffer = RolloutBuffer(
-            total_buffer_size=100,
             observation_dim=16,
             observation_length=20,
             action_dim=4,
@@ -289,3 +288,280 @@ class TestFactoryFunction:
 
         # Total samples should match buffer size
         assert total_samples == len(dataloader.dataset)
+
+
+class TestDatasetLimiting:
+    """Test class for dataset limiting and subset selection functionality."""
+
+    @pytest.fixture
+    def large_buffer_data(self):
+        """Create a large buffer dataset for testing limiting functionality."""
+        buffer_size = 200
+        obs_length = 20
+        obs_dim = 16
+        action_dim = 4
+
+        np.random.seed(42)
+
+        return {
+            "observations": np.random.randn(buffer_size, obs_length, obs_dim).astype(
+                np.float32
+            ),
+            "actions": np.random.randn(buffer_size, action_dim).astype(np.float32),
+            "action_masks": np.random.choice(
+                [True, False], (buffer_size, action_dim), p=[0.8, 0.2]
+            ),
+            "rewards": np.random.randn(buffer_size).astype(np.float32),
+            "values": np.random.randn(buffer_size).astype(np.float32),
+            "log_probs": np.random.randn(buffer_size).astype(np.float32),
+            "terminations": np.random.choice([True, False], buffer_size, p=[0.1, 0.9]),
+        }
+
+    def test_no_limit_uses_all_data(self, large_buffer_data):
+        """Test that without a limit, all data is used."""
+        dataset = PPODataset(buffer_data=large_buffer_data, gamma=0.99, lambda_gae=0.95)
+
+        assert len(dataset) == 200
+        assert dataset.total_length == 200
+        assert dataset.active_indices is None
+
+    def test_limit_smaller_than_dataset(self, large_buffer_data):
+        """Test that max_samples_per_epoch limits the dataset length."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+        )
+
+        assert len(dataset) == 50
+        assert dataset.total_length == 200
+        assert dataset.active_indices is not None
+        assert len(dataset.active_indices) == 50
+
+    def test_limit_larger_than_dataset(self, large_buffer_data):
+        """Test that a limit larger than dataset size uses all data."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=300,
+        )
+
+        assert len(dataset) == 200
+        assert dataset.total_length == 200
+        assert dataset.active_indices is None
+
+    def test_limit_equal_to_dataset(self, large_buffer_data):
+        """Test that a limit equal to dataset size uses all data."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=200,
+        )
+
+        assert len(dataset) == 200
+        assert dataset.total_length == 200
+        assert dataset.active_indices is None
+
+    def test_getitem_with_limit(self, large_buffer_data):
+        """Test that __getitem__ works correctly with a limit."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+        )
+
+        # Access all items in the limited dataset
+        for idx in range(len(dataset)):
+            item = dataset[idx]
+            assert isinstance(item, dict)
+            assert "observations" in item
+            assert item["observations"].shape == (20, 16)
+
+    def test_subset_selection_is_random(self, large_buffer_data):
+        """Test that different datasets get different random subsets."""
+        dataset1 = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+        )
+
+        dataset2 = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+        )
+
+        # The two datasets should likely have different subsets
+        # (extremely unlikely to be the same with random selection)
+        assert not torch.equal(dataset1.active_indices, dataset2.active_indices)
+
+    def test_shuffle_on_reset_disabled(self, large_buffer_data):
+        """Test that subset stays the same when shuffle_on_reset is False."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+            shuffle_on_reset=False,
+        )
+
+        # Store the initial indices
+        initial_indices = dataset.active_indices.clone()
+
+        # Reset the epoch
+        dataset.reset_epoch()
+
+        # Indices should remain the same
+        assert torch.equal(dataset.active_indices, initial_indices)
+
+    def test_shuffle_on_reset_enabled(self, large_buffer_data):
+        """Test that subset changes when shuffle_on_reset is True."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+            shuffle_on_reset=True,
+        )
+
+        # Store the initial indices
+        initial_indices = dataset.active_indices.clone()
+
+        # Reset the epoch
+        dataset.reset_epoch()
+
+        # Indices should be different (extremely unlikely to be the same)
+        assert not torch.equal(dataset.active_indices, initial_indices)
+
+    def test_reset_epoch_with_no_limit(self, large_buffer_data):
+        """Test that reset_epoch does nothing when there's no limit."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            shuffle_on_reset=True,  # Even with shuffle enabled
+        )
+
+        # Should have no active_indices
+        assert dataset.active_indices is None
+
+        # Reset should do nothing
+        dataset.reset_epoch()
+
+        # Still no active_indices
+        assert dataset.active_indices is None
+
+    def test_dataloader_with_limit(self, large_buffer_data):
+        """Test that DataLoader works correctly with limited dataset."""
+        dataloader = create_ppo_dataloader(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            batch_size=16,
+            shuffle=True,
+            max_samples_per_epoch=50,
+        )
+
+        # Dataset should be limited
+        assert len(dataloader.dataset) == 50
+
+        # Should be able to iterate
+        batches = list(dataloader)
+        assert len(batches) > 0
+
+        # Total samples should be 50 (or close if drop_last=True)
+        total_samples = sum(batch["observations"].shape[0] for batch in batches)
+        assert total_samples <= 50
+
+    def test_dataloader_with_limit_and_shuffle_on_reset(self, large_buffer_data):
+        """Test DataLoader with both limiting and shuffle_on_reset."""
+        dataloader = create_ppo_dataloader(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            batch_size=16,
+            shuffle=False,  # DataLoader shuffle off to see dataset subset changes
+            max_samples_per_epoch=50,
+            shuffle_on_reset=True,
+        )
+
+        # Get first batch from first epoch
+        first_epoch_first_batch = next(iter(dataloader))
+
+        # Reset the dataset
+        dataloader.dataset.reset_epoch()
+
+        # Get first batch from second epoch
+        second_epoch_first_batch = next(iter(dataloader))
+
+        # The batches should likely be different due to subset resampling
+        # Note: This test has a small probability of false positives
+        assert not torch.equal(
+            first_epoch_first_batch["observations"],
+            second_epoch_first_batch["observations"],
+        )
+
+    def test_all_data_accessible_over_multiple_epochs(self, large_buffer_data):
+        """Test that with shuffle_on_reset, different data is accessed each epoch."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+            shuffle_on_reset=True,
+        )
+
+        # Collect indices from multiple epochs
+        all_indices = set()
+        for _ in range(10):  # 10 epochs with 50 samples each
+            all_indices.update(dataset.active_indices.tolist())
+            dataset.reset_epoch()
+
+        # We should have seen a good portion of the dataset
+        # (likely more than just 50 unique indices)
+        assert len(all_indices) > 50
+
+    def test_indices_are_within_bounds(self, large_buffer_data):
+        """Test that sampled indices are always within valid range."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+            shuffle_on_reset=True,
+        )
+
+        # Check initial indices
+        assert torch.all(dataset.active_indices >= 0)
+        assert torch.all(dataset.active_indices < 200)
+
+        # Check after multiple resets
+        for _ in range(5):
+            dataset.reset_epoch()
+            assert torch.all(dataset.active_indices >= 0)
+            assert torch.all(dataset.active_indices < 200)
+
+    def test_indices_are_unique(self, large_buffer_data):
+        """Test that sampled indices don't contain duplicates."""
+        dataset = PPODataset(
+            buffer_data=large_buffer_data,
+            gamma=0.99,
+            lambda_gae=0.95,
+            max_samples_per_epoch=50,
+        )
+
+        # Check that all indices are unique
+        unique_indices = torch.unique(dataset.active_indices)
+        assert len(unique_indices) == len(dataset.active_indices)
+
+        # Check after reset
+        dataset.shuffle_on_reset = True
+        dataset.reset_epoch()
+        unique_indices = torch.unique(dataset.active_indices)
+        assert len(unique_indices) == len(dataset.active_indices)

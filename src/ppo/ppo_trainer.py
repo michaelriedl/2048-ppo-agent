@@ -39,6 +39,8 @@ class PPOTrainer:
         use_action_mask: bool = False,
         device: torch.device = torch.device("cpu"),
         mixed_precision: Optional[Literal["float16", "bfloat16"]] = "bfloat16",
+        max_samples_per_epoch: int = None,
+        shuffle_on_reset: bool = False,
     ):
         """
         Initialize PPO Trainer.
@@ -76,6 +78,11 @@ class PPOTrainer:
         mixed_precision : Optional[Literal["float16", "bfloat16"]], default="bfloat16"
             Enable mixed precision training. Use "float16" for float16 or "bfloat16" for bfloat16.
             If None, mixed precision is disabled. Only effective when device is CUDA.
+        max_samples_per_epoch : int, optional
+            Maximum number of samples to use per epoch during training. If None, all samples are used.
+        shuffle_on_reset : bool, default=False
+            If True and max_samples_per_epoch is set, select a different random subset
+            each time the dataset is exhausted between epochs.
         """
         self.agent = agent.to(device)
         self.batch_runner = batch_runner
@@ -91,6 +98,10 @@ class PPOTrainer:
         self.target_kl = target_kl
         self.use_action_mask = use_action_mask
         self.device = device
+
+        # Dataset limiting parameters
+        self.max_samples_per_epoch = max_samples_per_epoch
+        self.shuffle_on_reset = shuffle_on_reset
 
         # Mixed precision training setup
         self.mixed_precision = mixed_precision
@@ -331,6 +342,8 @@ class PPOTrainer:
             batch_size=batch_size,
             shuffle=True,
             drop_last=True,
+            max_samples_per_epoch=self.max_samples_per_epoch,
+            shuffle_on_reset=self.shuffle_on_reset,
         )
 
         # Set agent to training mode
@@ -346,6 +359,8 @@ class PPOTrainer:
         for epoch in range(n_epochs):
             epoch_kl_div = 0.0
             epoch_batches = 0
+            # Reset dataloader iterator
+            dataloader.dataset.reset_epoch()
 
             for batch in dataloader:
                 # Move batch to device
