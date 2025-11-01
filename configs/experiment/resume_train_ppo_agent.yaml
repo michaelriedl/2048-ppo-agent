@@ -18,8 +18,9 @@ task_name: "resume_train_transformer_combined"
 
 # Override trainer settings for resuming
 trainer:
+  entropy_coef: 0.0001
   # Path to checkpoint to resume from (set this to your checkpoint file)
-  resume_from_checkpoint: null  # e.g., "/path/to/checkpoint_100.pt" or "final_model.pt"
+  resume_from_checkpoint: ${paths.models_dir}/current_best.pt  # e.g., "/path/to/checkpoint_100.pt" or "final_model.pt"
   
   # Resume mode:
   # - true: extend training by total_timesteps beyond the checkpoint
@@ -27,7 +28,7 @@ trainer:
   resume_extend_steps: true
   
   # Training configuration (can be modified for resumed training)
-  total_timesteps: 500000000  # Will be added to existing timesteps if resume_extend_steps=true
+  total_timesteps: 5000000000  # Will be added to existing timesteps if resume_extend_steps=true
 
 # Note: When resuming, the model architecture must match the checkpoint
 # Make sure model config matches the original training configuration

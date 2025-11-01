@@ -5,3 +5,6 @@ work_dir: ${hydra:runtime.cwd}
 # path generation pattern is specified in `configs/hydra/default.yaml`
 # use it to store all files generated during the run, like ckpts and metrics
 output_dir: ${paths.work_dir}/../results/
+
+# path to saved models directory
+models_dir: ${paths.work_dir}/../.models
