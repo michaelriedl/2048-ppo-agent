@@ -534,7 +534,9 @@ class PPOTrainer:
         # Store the checkpoint path
         self.load_checkpoint_path = filename
         try:
-            checkpoint = torch.load(filename, map_location=self.device)
+            checkpoint = torch.load(
+                filename, map_location=self.device, weights_only=False
+            )
             logger.info(f"Loading checkpoint from {filename}")
         except Exception as e:
             logger.error(f"Failed to load checkpoint from {filename}: {e}")
