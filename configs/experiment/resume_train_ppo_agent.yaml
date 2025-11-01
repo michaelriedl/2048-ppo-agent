@@ -3,16 +3,6 @@
 # Configuration for resuming PPO training from a checkpoint
 # This is an example configuration that shows how to resume training
 
-# specify here default configuration
-# order of defaults determines the order in which configs override each other
-defaults:
-  - _self_
-  - data: default
-  - model: transformer_combined
-  - trainer: default
-  - paths: default
-  - hydra: default
-
 # task name, determines output directory path
 task_name: "resume_train_transformer_combined"
 
