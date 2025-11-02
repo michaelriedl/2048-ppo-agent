@@ -141,7 +141,9 @@ class PPOTrainer:
         self.total_update_steps = 0
         # Use deque with maxlen to automatically maintain a fixed-size buffer
         # Default to 10000 episodes if max_samples_per_epoch is not set
-        buffer_size = max_samples_per_epoch if max_samples_per_epoch is not None else 10000
+        buffer_size = (
+            max_samples_per_epoch if max_samples_per_epoch is not None else 10000
+        )
         self.episode_rewards = deque(maxlen=buffer_size)
         self.episode_lengths = deque(maxlen=buffer_size)
         self.last_save_timestep = 0
@@ -512,8 +514,12 @@ class PPOTrainer:
             "total_timesteps": self.total_timesteps,
             "total_epochs": self.total_epochs,
             "total_update_steps": self.total_update_steps,
-            "episode_rewards": list(self.episode_rewards),  # Convert deque to list for serialization
-            "episode_lengths": list(self.episode_lengths),  # Convert deque to list for serialization
+            "episode_rewards": list(
+                self.episode_rewards
+            ),  # Convert deque to list for serialization
+            "episode_lengths": list(
+                self.episode_lengths
+            ),  # Convert deque to list for serialization
             "last_save_timestep": self.last_save_timestep,
         }
 
@@ -581,8 +587,12 @@ class PPOTrainer:
         self.total_update_steps = checkpoint.get("total_update_steps", 0)
         # Convert loaded lists back to deque with the same maxlen
         buffer_size = self.episode_rewards.maxlen  # Get current maxlen
-        self.episode_rewards = deque(checkpoint.get("episode_rewards", []), maxlen=buffer_size)
-        self.episode_lengths = deque(checkpoint.get("episode_lengths", []), maxlen=buffer_size)
+        self.episode_rewards = deque(
+            checkpoint.get("episode_rewards", []), maxlen=buffer_size
+        )
+        self.episode_lengths = deque(
+            checkpoint.get("episode_lengths", []), maxlen=buffer_size
+        )
         self.last_save_timestep = checkpoint.get("last_save_timestep", 0)
 
         # Load GradScaler state if available and using mixed precision
