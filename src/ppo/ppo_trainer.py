@@ -522,7 +522,7 @@ class PPOTrainer:
             f"Checkpoint saved to {filename} (timesteps: {self.total_timesteps})"
         )
 
-    def load_checkpoint(self, filename: str) -> None:
+    def load_checkpoint(self, filename: str, load_optimizer: bool = False) -> None:
         """
         Load model checkpoint.
 
@@ -557,12 +557,18 @@ class PPOTrainer:
             raise
 
         # Load optimizer state
-        try:
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            logger.info("Successfully loaded optimizer state")
-        except Exception as e:
-            logger.warning(
-                f"Failed to load optimizer state: {e}. Training will continue with fresh optimizer state."
+        if load_optimizer:
+            logger.info("Loading optimizer state as load_optimizer is set to True")
+            try:
+                self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                logger.info("Successfully loaded optimizer state")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load optimizer state: {e}. Training will continue with fresh optimizer state."
+                )
+        else:
+            logger.info(
+                "Skipping optimizer state load as load_optimizer is set to False"
             )
 
         # Load training statistics
