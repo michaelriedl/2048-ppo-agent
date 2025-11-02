@@ -3,23 +3,16 @@
 # Configuration for resuming PPO training from a checkpoint
 # This is an example configuration that shows how to resume training
 
-# specify here default configuration
-# order of defaults determines the order in which configs override each other
-defaults:
-  - _self_
-  - data: default
-  - model: transformer_combined
-  - trainer: default
-  - paths: default
-  - hydra: default
-
 # task name, determines output directory path
 task_name: "resume_train_transformer_combined"
 
 # Override trainer settings for resuming
 trainer:
+  entropy_coef: 0.0001
+  optim:
+    max_lr: 1e-5
   # Path to checkpoint to resume from (set this to your checkpoint file)
-  resume_from_checkpoint: null  # e.g., "/path/to/checkpoint_100.pt" or "final_model.pt"
+  resume_from_checkpoint: ${paths.models_dir}/current_best.pt  # e.g., "/path/to/checkpoint_100.pt" or "final_model.pt"
   
   # Resume mode:
   # - true: extend training by total_timesteps beyond the checkpoint
@@ -27,7 +20,7 @@ trainer:
   resume_extend_steps: true
   
   # Training configuration (can be modified for resumed training)
-  total_timesteps: 500000000  # Will be added to existing timesteps if resume_extend_steps=true
+  total_timesteps: 5000000000  # Will be added to existing timesteps if resume_extend_steps=true
 
 # Note: When resuming, the model architecture must match the checkpoint
 # Make sure model config matches the original training configuration
