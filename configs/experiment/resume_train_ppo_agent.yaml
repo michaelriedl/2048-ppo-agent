@@ -9,6 +9,8 @@ task_name: "resume_train_transformer_combined"
 # Override trainer settings for resuming
 trainer:
   entropy_coef: 0.0001
+  optim:
+    max_lr: 1e-5
   # Path to checkpoint to resume from (set this to your checkpoint file)
   resume_from_checkpoint: ${paths.models_dir}/current_best.pt  # e.g., "/path/to/checkpoint_100.pt" or "final_model.pt"
   
